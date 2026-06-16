@@ -127,6 +127,308 @@ class DefaultsExportTests: XCTestCase {
         XCTAssertTrue(keys.contains("cyclingOverlapOffset"), "cyclingOverlapOffset missing from Defaults.array")
         XCTAssertTrue(keys.contains("cyclingOverlapOffsetSize"), "cyclingOverlapOffsetSize missing from Defaults.array")
         XCTAssertTrue(keys.contains("cyclingOverlapMaxCascade"), "cyclingOverlapMaxCascade missing from Defaults.array")
+        XCTAssertTrue(keys.contains("cooperativeCornerResize"), "cooperativeCornerResize missing from Defaults.array")
+    }
+}
+
+class CooperativeCornerResizeTests: XCTestCase {
+    private let screenFrame = CGRect(x: 0, y: 0, width: 1200, height: 900)
+    private let minimumSize = CGSize(width: 100, height: 100)
+    private let tolerance: CGFloat = 8
+
+    func testBottomLeftVerticalExpansionShrinksTopLeftNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 300)
+        let focusedNew = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let topLeft = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 300, width: 800, height: 600))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [topLeft], axis: .vertical)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 0, y: 600, width: 800, height: 300))
+        XCTAssertEqual(focusedNew.maxY, adjustments[0].newFrame.minY, accuracy: 0.001)
+    }
+
+    func testBottomLeftVerticalShrinkExpandsTopLeftNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let focusedNew = CGRect(x: 0, y: 0, width: 800, height: 300)
+        let topLeft = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 600, width: 800, height: 300))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [topLeft], axis: .vertical)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 0, y: 300, width: 800, height: 600))
+        XCTAssertEqual(focusedNew.maxY, adjustments[0].newFrame.minY, accuracy: 0.001)
+    }
+
+    func testMatchingBottomLeftWindowShrinksWithFocusedWindowBeforeNeighborExpands() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let focusedNew = CGRect(x: 0, y: 0, width: 800, height: 300)
+        let matchingBottomLeft = CooperativeCornerResize.Candidate(id: 2, frame: focusedOld)
+        let topLeft = CooperativeCornerResize.Candidate(id: 3, frame: CGRect(x: 0, y: 600, width: 800, height: 300))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [matchingBottomLeft, topLeft], axis: .vertical)
+
+        XCTAssertEqual(adjustments.count, 2)
+        XCTAssertEqual(adjustments[0].id, matchingBottomLeft.id)
+        XCTAssertEqual(adjustments[0].kind, .matchingFocusedFrame)
+        assertRect(adjustments[0].newFrame, equals: focusedNew)
+        XCTAssertEqual(adjustments[1].id, topLeft.id)
+        XCTAssertEqual(adjustments[1].kind, .adjacent)
+        assertRect(adjustments[1].newFrame, equals: CGRect(x: 0, y: 300, width: 800, height: 600))
+    }
+
+    func testTopLeftHorizontalExpansionShrinksTopRightNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 300, width: 600, height: 600)
+        let focusedNew = CGRect(x: 0, y: 300, width: 800, height: 600)
+        let topRight = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 600, y: 300, width: 600, height: 600))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [topRight], axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 800, y: 300, width: 400, height: 600))
+        XCTAssertEqual(focusedNew.maxX, adjustments[0].newFrame.minX, accuracy: 0.001)
+    }
+
+    func testTopLeftHorizontalShrinkExpandsTopRightNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 300, width: 800, height: 600)
+        let focusedNew = CGRect(x: 0, y: 300, width: 600, height: 600)
+        let topRight = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 800, y: 300, width: 400, height: 600))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [topRight], axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 600, y: 300, width: 600, height: 600))
+        XCTAssertEqual(focusedNew.maxX, adjustments[0].newFrame.minX, accuracy: 0.001)
+    }
+
+    func testLeftSideHorizontalExpansionShrinksRightSideNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 600, height: 900)
+        let focusedNew = CGRect(x: 0, y: 0, width: 800, height: 900)
+        let rightSide = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 600, y: 0, width: 600, height: 900))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [rightSide], axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 800, y: 0, width: 400, height: 900))
+        XCTAssertEqual(focusedNew.maxX, adjustments[0].newFrame.minX, accuracy: 0.001)
+    }
+
+    func testLeftSideHorizontalExpansionShrinksStackedRightCornerNeighbors() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 600, height: 900)
+        let focusedNew = CGRect(x: 0, y: 0, width: 800, height: 900)
+        let bottomRight = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 600, y: 0, width: 600, height: 450))
+        let topRight = CooperativeCornerResize.Candidate(id: 3, frame: CGRect(x: 600, y: 450, width: 600, height: 450))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [bottomRight, topRight], axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 2)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 800, y: 0, width: 400, height: 450))
+        assertRect(adjustments[1].newFrame, equals: CGRect(x: 800, y: 450, width: 400, height: 450))
+    }
+
+    func testLeftSideHorizontalShrinkExpandsRightSideNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 900)
+        let focusedNew = CGRect(x: 0, y: 0, width: 600, height: 900)
+        let rightSide = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 800, y: 0, width: 400, height: 900))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [rightSide], axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 600, y: 0, width: 600, height: 900))
+        XCTAssertEqual(focusedNew.maxX, adjustments[0].newFrame.minX, accuracy: 0.001)
+    }
+
+    func testMatchingLeftSideWindowShrinksWithFocusedWindowBeforeRightSideNeighborExpands() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 900)
+        let focusedNew = CGRect(x: 0, y: 0, width: 600, height: 900)
+        let matchingLeftSide = CooperativeCornerResize.Candidate(id: 2, frame: focusedOld)
+        let rightSide = CooperativeCornerResize.Candidate(id: 3, frame: CGRect(x: 800, y: 0, width: 400, height: 900))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [matchingLeftSide, rightSide], axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 2)
+        XCTAssertEqual(adjustments[0].id, matchingLeftSide.id)
+        XCTAssertEqual(adjustments[0].kind, .matchingFocusedFrame)
+        assertRect(adjustments[0].newFrame, equals: focusedNew)
+        XCTAssertEqual(adjustments[1].id, rightSide.id)
+        XCTAssertEqual(adjustments[1].kind, .adjacent)
+        assertRect(adjustments[1].newFrame, equals: CGRect(x: 600, y: 0, width: 600, height: 900))
+    }
+
+    func testLeftSideShrinkAlsoShrinksPartialBottomLeftOccupant() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 900)
+        let focusedNew = CGRect(x: 0, y: 0, width: 400, height: 900)
+        let bottomLeft = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 0, width: 800, height: 300))
+        let bottomRight = CooperativeCornerResize.Candidate(id: 3, frame: CGRect(x: 800, y: 0, width: 400, height: 300))
+        let topRight = CooperativeCornerResize.Candidate(id: 4, frame: CGRect(x: 800, y: 300, width: 400, height: 600))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld,
+                                                focusedNew: focusedNew,
+                                                candidates: [bottomLeft, bottomRight, topRight],
+                                                axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 3)
+        XCTAssertEqual(adjustments[0].id, bottomLeft.id)
+        XCTAssertEqual(adjustments[0].kind, .matchingFocusedFrame)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 0, y: 0, width: 400, height: 300))
+        assertRect(adjustments[1].newFrame, equals: CGRect(x: 400, y: 0, width: 800, height: 300))
+        assertRect(adjustments[2].newFrame, equals: CGRect(x: 400, y: 300, width: 800, height: 600))
+    }
+
+    func testRightSideHorizontalExpansionShrinksLeftSideNeighbor() {
+        let focusedOld = CGRect(x: 600, y: 0, width: 600, height: 900)
+        let focusedNew = CGRect(x: 400, y: 0, width: 800, height: 900)
+        let leftSide = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 0, width: 600, height: 900))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [leftSide], axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 0, y: 0, width: 400, height: 900))
+        XCTAssertEqual(adjustments[0].newFrame.maxX, focusedNew.minX, accuracy: 0.001)
+    }
+
+    func testTopSideVerticalExpansionShrinksBottomSideNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 450, width: 1200, height: 450)
+        let focusedNew = CGRect(x: 0, y: 300, width: 1200, height: 600)
+        let bottomSide = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 0, width: 1200, height: 450))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [bottomSide], axis: .vertical)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 0, y: 0, width: 1200, height: 300))
+        XCTAssertEqual(adjustments[0].newFrame.maxY, focusedNew.minY, accuracy: 0.001)
+    }
+
+    func testTopSideVerticalExpansionShrinksStackedBottomCornerNeighbors() {
+        let focusedOld = CGRect(x: 0, y: 450, width: 1200, height: 450)
+        let focusedNew = CGRect(x: 0, y: 300, width: 1200, height: 600)
+        let bottomLeft = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 0, width: 600, height: 450))
+        let bottomRight = CooperativeCornerResize.Candidate(id: 3, frame: CGRect(x: 600, y: 0, width: 600, height: 450))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [bottomLeft, bottomRight], axis: .vertical)
+
+        XCTAssertEqual(adjustments.count, 2)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 0, y: 0, width: 600, height: 300))
+        assertRect(adjustments[1].newFrame, equals: CGRect(x: 600, y: 0, width: 600, height: 300))
+    }
+
+    func testTopSideVerticalShrinkExpandsBottomSideNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 300, width: 1200, height: 600)
+        let focusedNew = CGRect(x: 0, y: 450, width: 1200, height: 450)
+        let bottomSide = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 0, width: 1200, height: 300))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [bottomSide], axis: .vertical)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 0, y: 0, width: 1200, height: 450))
+        XCTAssertEqual(adjustments[0].newFrame.maxY, focusedNew.minY, accuracy: 0.001)
+    }
+
+    func testBottomSideVerticalExpansionShrinksTopSideNeighbor() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 1200, height: 450)
+        let focusedNew = CGRect(x: 0, y: 0, width: 1200, height: 600)
+        let topSide = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 450, width: 1200, height: 450))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [topSide], axis: .vertical)
+
+        XCTAssertEqual(adjustments.count, 1)
+        assertRect(adjustments[0].newFrame, equals: CGRect(x: 0, y: 600, width: 1200, height: 300))
+        XCTAssertEqual(focusedNew.maxY, adjustments[0].newFrame.minY, accuracy: 0.001)
+    }
+
+    func testNoAdjacentCandidateFound() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 300)
+        let focusedNew = CGRect(x: 0, y: 0, width: 800, height: 600)
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [], axis: .vertical)
+
+        XCTAssertTrue(adjustments.isEmpty)
+    }
+
+    func testAmbiguousFloatingWindowIsIgnored() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 300)
+        let focusedNew = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let floating = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 20, y: 302, width: 500, height: 240))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [floating], axis: .vertical)
+
+        XCTAssertTrue(adjustments.isEmpty)
+    }
+
+    func testToleranceMatchesNormalTiledNeighborsWithGaps() {
+        let focusedOld = CGRect(x: 0, y: 0, width: 800, height: 300)
+        let focusedNew = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let topLeft = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 3, y: 305, width: 794, height: 592))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [topLeft], axis: .vertical)
+
+        XCTAssertEqual(adjustments.count, 1)
+        XCTAssertEqual(adjustments[0].newFrame.minY, focusedNew.maxY, accuracy: 0.001)
+    }
+
+    func testNonCycledAxisRemainsUnchanged() {
+        let focusedOld = CGRect(x: 0, y: 300, width: 600, height: 600)
+        let focusedNew = CGRect(x: 0, y: 300, width: 800, height: 600)
+        let topRight = CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 600, y: 300, width: 600, height: 600))
+
+        let adjustments = cooperativeAdjustments(focusedOld: focusedOld, focusedNew: focusedNew, candidates: [topRight], axis: .horizontal)
+
+        XCTAssertEqual(adjustments.count, 1)
+        XCTAssertEqual(adjustments[0].newFrame.minY, topRight.frame.minY, accuracy: 0.001)
+        XCTAssertEqual(adjustments[0].newFrame.height, topRight.frame.height, accuracy: 0.001)
+    }
+
+    func testDisabledExperimentalPreferenceLeavesCornerCalculationUnchanged() {
+        let savedValue = Defaults.cooperativeCornerResize.enabled
+        let savedAxis = Defaults.cornerCycleExpansionAxis.value
+        let savedHorizontalSplitRatio = Defaults.horizontalSplitRatio.value
+        let savedVerticalSplitRatio = Defaults.verticalSplitRatio.value
+        defer {
+            Defaults.cooperativeCornerResize.enabled = savedValue
+            Defaults.cornerCycleExpansionAxis.value = savedAxis
+            Defaults.horizontalSplitRatio.value = savedHorizontalSplitRatio
+            Defaults.verticalSplitRatio.value = savedVerticalSplitRatio
+        }
+
+        Defaults.cooperativeCornerResize.enabled = false
+        Defaults.cornerCycleExpansionAxis.value = .vertical
+        Defaults.horizontalSplitRatio.value = 50
+        Defaults.verticalSplitRatio.value = 50
+
+        let visibleFrame = CGRect(x: 10, y: 20, width: 1200, height: 900)
+        let firstRect = WindowCalculationFactory.lowerLeftCalculation.calculateRect(RectCalculationParameters(window: Window(id: 1, rect: visibleFrame),
+                                                                                                             visibleFrameOfScreen: visibleFrame,
+                                                                                                             action: .bottomLeft,
+                                                                                                             lastAction: nil)).rect
+        let repeatedRect = WindowCalculationFactory.lowerLeftCalculation.calculateRect(RectCalculationParameters(window: Window(id: 1, rect: firstRect),
+                                                                                                                visibleFrameOfScreen: visibleFrame,
+                                                                                                                action: .bottomLeft,
+                                                                                                                lastAction: RectangleAction(action: .bottomLeft,
+                                                                                                                                            subAction: nil,
+                                                                                                                                            rect: firstRect,
+                                                                                                                                            count: 1))).rect
+
+        assertRect(repeatedRect, equals: CGRect(x: 10, y: 20, width: 600, height: 600))
+    }
+
+    private func cooperativeAdjustments(focusedOld: CGRect,
+                                        focusedNew: CGRect,
+                                        candidates: [CooperativeCornerResize.Candidate],
+                                        axis: CornerCycleExpansionAxis) -> [CooperativeCornerResize.Adjustment] {
+        CooperativeCornerResize.adjustments(oldFocusedFrame: focusedOld,
+                                            newFocusedFrame: focusedNew,
+                                            screenFrame: screenFrame,
+                                            candidates: candidates,
+                                            axis: axis,
+                                            tolerance: tolerance,
+                                            minimumSize: minimumSize)
+    }
+
+    private func assertRect(_ rect: CGRect, equals expected: CGRect, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(rect.origin.x, expected.origin.x, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(rect.origin.y, expected.origin.y, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(rect.width, expected.width, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(rect.height, expected.height, accuracy: 0.001, file: file, line: line)
     }
 }
 
@@ -329,6 +631,75 @@ class HalfSplitCornerCalculationTests: XCTestCase {
         assertRect(firstRect, equals: CGRect(x: 10, y: 20, width: 600, height: 450))
         assertRect(firstRepeatedRect, equals: CGRect(x: 10, y: 20, width: 600, height: 600))
         assertRect(secondRepeatedRect, equals: CGRect(x: 10, y: 20, width: 600, height: 300))
+    }
+
+    func testRepeatedSideShortcutAdvancesWhenCurrentFrameMatchesSplitRatioCycleSize() {
+        setSplitRatio(CycleSize.twoThirds.percentValue)
+
+        let leftFrame = WindowCalculationFactory.leftHalfCalculation.calculateRect(params(for: .leftHalf)).rect
+        let repeatedLeftFrame = WindowCalculationFactory.leftHalfCalculation.calculateRepeatedRect(repeatedParams(for: .leftHalf, currentRect: leftFrame)).rect
+
+        assertRect(leftFrame, equals: CGRect(x: 10, y: 20, width: 800, height: 900))
+        assertRect(repeatedLeftFrame, equals: CGRect(x: 10, y: 20, width: 400, height: 900))
+    }
+
+    func testRepeatedTopShortcutAdvancesWhenCurrentFrameMatchesSplitRatioCycleSize() {
+        setSplitRatio(CycleSize.twoThirds.percentValue)
+
+        let topFrame = WindowCalculationFactory.topHalfCalculation.calculateRect(params(for: .topHalf)).rect
+        let repeatedTopFrame = WindowCalculationFactory.topHalfCalculation.calculateRepeatedRect(repeatedParams(for: .topHalf, currentRect: topFrame)).rect
+
+        assertRect(topFrame, equals: CGRect(x: 10, y: 320, width: 1200, height: 600))
+        assertRect(repeatedTopFrame, equals: CGRect(x: 10, y: 620, width: 1200, height: 300))
+    }
+
+    func testHorizontalCornerShortcutCanCycleAfterCompatibleSideShortcut() {
+        setSplitRatio(50)
+        Defaults.cornerCycleExpansionAxis.value = .horizontal
+
+        let leftFrame = WindowCalculationFactory.leftHalfCalculation.calculateRect(params(for: .leftHalf)).rect
+        let topLeftFrame = WindowCalculationFactory.upperLeftCalculation.calculateRect(RectCalculationParameters(window: Window(id: 1, rect: leftFrame),
+                                                                                                                visibleFrameOfScreen: visibleFrame,
+                                                                                                                action: .topLeft,
+                                                                                                                lastAction: RectangleAction(action: .leftHalf,
+                                                                                                                                            subAction: nil,
+                                                                                                                                            rect: leftFrame,
+                                                                                                                                            count: 1))).rect
+
+        assertRect(topLeftFrame, equals: CGRect(x: 10, y: 470, width: 800, height: 450))
+    }
+
+    func testVerticalCornerShortcutCanCycleAfterCompatibleSideShortcut() {
+        setSplitRatio(50)
+        Defaults.cornerCycleExpansionAxis.value = .vertical
+
+        let topFrame = WindowCalculationFactory.topHalfCalculation.calculateRect(params(for: .topHalf)).rect
+        let topLeftFrame = WindowCalculationFactory.upperLeftCalculation.calculateRect(RectCalculationParameters(window: Window(id: 1, rect: topFrame),
+                                                                                                                visibleFrameOfScreen: visibleFrame,
+                                                                                                                action: .topLeft,
+                                                                                                                lastAction: RectangleAction(action: .topHalf,
+                                                                                                                                            subAction: nil,
+                                                                                                                                            rect: topFrame,
+                                                                                                                                            count: 1))).rect
+
+        assertRect(topLeftFrame, equals: CGRect(x: 10, y: 320, width: 600, height: 600))
+    }
+
+    func testDifferentTopCornerShortcutDoesNotTriggerVerticalExpansionCycleAtOneThirdSplit() {
+        setSplitRatio(CycleSize.oneThird.percentValue)
+        Defaults.cornerCycleExpansionAxis.value = .vertical
+
+        let topLeftFrame = WindowCalculationFactory.upperLeftCalculation.calculateRect(params(for: .topLeft)).rect
+        let topRightFrame = WindowCalculationFactory.upperRightCalculation.calculateRect(RectCalculationParameters(window: Window(id: 1, rect: topLeftFrame),
+                                                                                                                  visibleFrameOfScreen: visibleFrame,
+                                                                                                                  action: .topRight,
+                                                                                                                  lastAction: RectangleAction(action: .topLeft,
+                                                                                                                                              subAction: nil,
+                                                                                                                                              rect: topLeftFrame,
+                                                                                                                                              count: 1))).rect
+
+        assertRect(topLeftFrame, equals: CGRect(x: 10, y: 620, width: 400, height: 300))
+        assertRect(topRightFrame, equals: CGRect(x: 410, y: 620, width: 800, height: 300))
     }
 
     func testRepeatedHalfActionWithNoCycleSizesSelectedUsesFirstRect() {

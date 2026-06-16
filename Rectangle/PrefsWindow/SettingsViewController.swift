@@ -45,6 +45,7 @@ class SettingsViewController: NSViewController {
     
     private var cycleSizeCheckboxes = [NSButton]()
     private var cornerCycleExpansionAxisButtons = [NSButton]()
+    private var cooperativeCornerResizeCheckbox: NSButton?
     private var combinedDisplayModeCheckbox: NSButton?
     
     @IBAction func toggleLaunchOnLogin(_ sender: NSButton) {
@@ -127,6 +128,10 @@ class SettingsViewController: NSViewController {
 
         Defaults.cornerCycleExpansionAxis.value = axis
         setToggleStatesForCornerCycleExpansionAxisButtons()
+    }
+
+    @objc func toggleCooperativeCornerResize(_ sender: NSButton) {
+        Defaults.cooperativeCornerResize.enabled = sender.state == .on
     }
     
     @IBAction func checkForUpdates(_ sender: Any) {
@@ -1031,11 +1036,14 @@ class SettingsViewController: NSViewController {
         self.cycleSizeCheckboxes = cycleSizeCheckboxes
 
         let cornerCycleExpansionAxisRow = makeCornerCycleExpansionAxisRow()
+        let cooperativeCornerResizeCheckbox = makeCooperativeCornerResizeCheckbox()
+        self.cooperativeCornerResizeCheckbox = cooperativeCornerResizeCheckbox
         cycleSizesView.orientation = .vertical
         cycleSizesView.alignment = .leading
         cycleSizesView.spacing = 8
         cycleSizesView.addArrangedSubview(makeCycleSizesRow(cycleSizeCheckboxes))
         cycleSizesView.addArrangedSubview(cornerCycleExpansionAxisRow)
+        cycleSizesView.addArrangedSubview(cooperativeCornerResizeCheckbox)
         
         initializeCycleSizesView(animated: false)
 
@@ -1117,6 +1125,7 @@ class SettingsViewController: NSViewController {
         }
         setToggleStatesForCycleSizeCheckboxes()
         setToggleStatesForCornerCycleExpansionAxisButtons()
+        setToggleStateForCooperativeCornerResizeCheckbox()
     }
     
     private func initializeCycleSizesView(animated: Bool = false) {
@@ -1125,6 +1134,7 @@ class SettingsViewController: NSViewController {
         if showOptionsView {
             setToggleStatesForCycleSizeCheckboxes()
             setToggleStatesForCornerCycleExpansionAxisButtons()
+            setToggleStateForCooperativeCornerResizeCheckbox()
         }
         
         setVisibility(shown: showOptionsView, ofView: cycleSizesView, withConstraint: cycleSizesViewHeightConstraint, animated: animated)
@@ -1243,6 +1253,15 @@ class SettingsViewController: NSViewController {
         button.setContentCompressionResistancePriority(.required, for: .vertical)
         return button
     }
+
+    private func makeCooperativeCornerResizeCheckbox() -> NSButton {
+        let button = NSButton(checkboxWithTitle: NSLocalizedString("Resize adjacent windows when cycling side or corner shortcuts", tableName: "Main", value: "", comment: ""),
+                              target: self,
+                              action: #selector(toggleCooperativeCornerResize(_:)))
+        button.refusesFirstResponder = true
+        button.setContentCompressionResistancePriority(.required, for: .vertical)
+        return button
+    }
     
     private func configureHalfSplitRatioPopUpButton(_ popUpButton: HalfSplitRatioPopUpButton) {
         popUpButton.removeAllItems()
@@ -1325,6 +1344,10 @@ class SettingsViewController: NSViewController {
         cornerCycleExpansionAxisButtons.forEach { button in
             button.state = button.tag == Defaults.cornerCycleExpansionAxis.value.rawValue ? .on : .off
         }
+    }
+
+    private func setToggleStateForCooperativeCornerResizeCheckbox() {
+        cooperativeCornerResizeCheckbox?.state = Defaults.cooperativeCornerResize.enabled ? .on : .off
     }
 
 }

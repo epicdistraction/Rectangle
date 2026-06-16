@@ -130,8 +130,17 @@ class WindowManager {
             return
         }
         
-        let visibleFrameOfDestinationScreen = calcResult.resultingScreenFrame ?? calcResult.screen.adjustedVisibleFrame(ignoreTodo)
         let isFixedSize = (!frontmostWindowElement.isResizable() && action.resizes) || frontmostWindowElement.isSystemDialog == true
+        let visibleFrameOfDestinationScreen = calcResult.resultingScreenFrame ?? calcResult.screen.adjustedVisibleFrame(ignoreTodo)
+        let cooperativeCornerAdjustments = cooperativeCornerResizeAdjustments(focusedWindowId: windowId,
+                                                                              focusedWindowIsFixedSize: isFixedSize,
+                                                                              action: action,
+                                                                              source: parameters.source,
+                                                                              oldFocusedFrame: currentNormalizedRect,
+                                                                              newFocusedFrame: calcResult.rect,
+                                                                              screenFrame: visibleFrameOfDestinationScreen,
+                                                                              destinationScreenIsCurrentScreen: usableScreens.currentScreen == calcResult.screen,
+                                                                              lastRectangleAction: lastRectangleAction)
         let resultParameters = ResultParameters(windowId: windowId,
                                                 action: action,
                                                 windowElement: frontmostWindowElement,
@@ -141,19 +150,19 @@ class WindowManager {
                                                 source: parameters.source,
                                                 isFixedSize: isFixedSize)
         
-        var resultingRect = apply(result: resultParameters)
+        var resultingRect = apply(result: resultParameters, cooperativeCornerAdjustments: cooperativeCornerAdjustments)
         
         let isMovedAcrossDisplays = usableScreens.currentScreen != calcResult.screen
         if isMovedAcrossDisplays {
             if calcResult.rect.height != resultingRect.height {
                 Logger.log("Window size wasn't applied perfectly across displays. Trying again.")
-                resultingRect = apply(result: resultParameters)
+                resultingRect = apply(result: resultParameters, cooperativeCornerAdjustments: cooperativeCornerAdjustments)
                 
                 if calcResult.rect.height != resultingRect.height {
                     Logger.log("Final attempt to adjust across displays.")
                     DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(25)) { [weak self] in
                         guard let self else { return }
-                        let finalRect = self.apply(result: resultParameters)
+                        let finalRect = self.apply(result: resultParameters, cooperativeCornerAdjustments: cooperativeCornerAdjustments)
                         self.windowMovedAcrossDisplays(windowElement: frontmostWindowElement, resultingRect: finalRect)
                         self.postProcess(result: resultParameters, resultingRect: finalRect)
                     }
@@ -169,17 +178,106 @@ class WindowManager {
     /// Move/resize a window based on the calculation results.
     /// - Returns: The rect of the window after applying the window action
     func apply(result: ResultParameters) -> CGRect {
+        apply(result: result, cooperativeCornerAdjustments: [])
+    }
+
+    private func apply(result: ResultParameters, cooperativeCornerAdjustments: [CooperativeCornerWindowAdjustment]) -> CGRect {
         let windowMoverChain = result.isFixedSize
         ? fixedSizeWindowMoverChain
         : standardWindowMoverChain
         
         let newRect = result.calcResult.rect
+        let cooperativeAxis = result.action.cooperativeResizeAxis
+        let focusedWindowIsExpanding = cooperativeAxis.map {
+            CooperativeCornerResize.focusedWindowIsExpanding(oldFrame: result.windowElement.frame.screenFlipped,
+                                                             newFrame: newRect,
+                                                             axis: $0)
+        } ?? false
+
+        if focusedWindowIsExpanding {
+            apply(cooperativeCornerAdjustments, kind: .adjacent)
+            apply(cooperativeCornerAdjustments, kind: .matchingFocusedFrame)
+        }
         
         for windowMover in windowMoverChain {
             windowMover.moveWindow(toRect: newRect, resultParameters: result)
         }
-        
-        return result.windowElement.frame
+
+        let resultingRect = result.windowElement.frame
+
+        if !focusedWindowIsExpanding {
+            apply(cooperativeCornerAdjustments, kind: .matchingFocusedFrame)
+            apply(cooperativeCornerAdjustments, kind: .adjacent)
+        }
+
+        return resultingRect
+    }
+
+    private func cooperativeCornerResizeAdjustments(focusedWindowId: CGWindowID,
+                                                    focusedWindowIsFixedSize: Bool,
+                                                    action: WindowAction,
+                                                    source: ExecutionSource,
+                                                    oldFocusedFrame: CGRect,
+                                                    newFocusedFrame: CGRect,
+                                                    screenFrame: CGRect,
+                                                    destinationScreenIsCurrentScreen: Bool,
+                                                    lastRectangleAction: RectangleAction?) -> [CooperativeCornerWindowAdjustment] {
+        guard Defaults.cooperativeCornerResize.enabled,
+              source == .keyboardShortcut,
+              !focusedWindowIsFixedSize,
+              destinationScreenIsCurrentScreen,
+              let cooperativeAxis = action.cooperativeResizeAxis,
+              action.isCompatibleRepeatedResizeAction(with: lastRectangleAction?.action)
+        else {
+            return []
+        }
+
+        let tolerance = max(CGFloat(Defaults.gapSize.value) + 4, 4)
+        let screenFrameAX = screenFrame.screenFlipped
+        let elementsById = AccessibilityElement.getAllWindowElements().reduce(into: [CGWindowID: AccessibilityElement]()) { elements, element in
+            guard let candidateId = element.getWindowId(),
+                  candidateId != focusedWindowId,
+                  element.isWindow == true,
+                  element.isMinimized != true,
+                  element.isFullScreen != true,
+                  element.isHidden != true,
+                  element.isSheet != true,
+                  element.isResizable()
+            else {
+                return
+            }
+
+            let frame = element.frame
+            guard !frame.isNull, screenFrameAX.intersects(frame) else {
+                return
+            }
+
+            elements[candidateId] = element
+        }
+
+        let candidates = elementsById.map { id, element in
+            CooperativeCornerResize.Candidate(id: id, frame: element.frame.screenFlipped)
+        }
+        let minimumSize = CGSize(width: max(1, CGFloat(Defaults.minimumWindowWidth.value)),
+                                 height: max(1, CGFloat(Defaults.minimumWindowHeight.value)))
+        let adjustments = CooperativeCornerResize.adjustments(oldFocusedFrame: oldFocusedFrame,
+                                                              newFocusedFrame: newFocusedFrame,
+                                                              screenFrame: screenFrame,
+                                                              candidates: candidates,
+                                                              axis: cooperativeAxis,
+                                                              tolerance: tolerance,
+                                                              minimumSize: minimumSize)
+
+        return adjustments.compactMap { adjustment in
+            guard let element = elementsById[adjustment.id] else { return nil }
+            return CooperativeCornerWindowAdjustment(element: element, newFrame: adjustment.newFrame, kind: adjustment.kind)
+        }
+    }
+
+    private func apply(_ adjustments: [CooperativeCornerWindowAdjustment], kind: CooperativeCornerResize.Adjustment.Kind) {
+        adjustments.filter { $0.kind == kind }.forEach { adjustment in
+            adjustment.element.setFrame(adjustment.newFrame.screenFlipped)
+        }
     }
     
     func windowMovedAcrossDisplays(windowElement: AccessibilityElement, resultingRect: CGRect) {
@@ -313,4 +411,10 @@ struct ExecutionParameters {
 
 enum ExecutionSource {
     case keyboardShortcut, dragToSnap, menuItem, url, titleBar
+}
+
+private struct CooperativeCornerWindowAdjustment {
+    let element: AccessibilityElement
+    let newFrame: CGRect
+    let kind: CooperativeCornerResize.Adjustment.Kind
 }
