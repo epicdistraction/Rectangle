@@ -22,6 +22,10 @@ enum DirectionalResizeOperation: Equatable {
     case expand, contract
 }
 
+enum DirectionalResizeTargetMode: Equatable {
+    case step, max
+}
+
 struct DirectionalResizeIntent {
     let placement: DirectionalResizePlacement
     let direction: DirectionalResizeDirection
@@ -29,13 +33,15 @@ struct DirectionalResizeIntent {
     let operation: DirectionalResizeOperation
     let movedEdge: CooperativeCornerResize.MovedEdge
     let placementAction: WindowAction
+    let targetMode: DirectionalResizeTargetMode
 
     func usesFullSplitBoundary(cyclicCornerAxis: CornerCycleExpansionAxis) -> Bool {
         placementAction.isCooperativeCornerAction && axis != cyclicCornerAxis
     }
 
     static func resolve(placement: DirectionalResizePlacement,
-                        direction: DirectionalResizeDirection) -> DirectionalResizeIntent? {
+                        direction: DirectionalResizeDirection,
+                        targetMode: DirectionalResizeTargetMode = .step) -> DirectionalResizeIntent? {
         let horizontalAnchor: HalfSplitSide?
         let verticalAnchor: HalfSplitSide?
 
@@ -91,7 +97,8 @@ struct DirectionalResizeIntent {
                                        axis: axis,
                                        operation: operation,
                                        movedEdge: movedEdge,
-                                       placementAction: placementAction)
+                                       placementAction: placementAction,
+                                       targetMode: targetMode)
     }
 }
 
@@ -118,7 +125,22 @@ extension WindowAction {
         case .resizeDown: return .down
         case .resizeLeft: return .left
         case .resizeRight: return .right
+        case .maxResizeUp: return .up
+        case .maxResizeDown: return .down
+        case .maxResizeLeft: return .left
+        case .maxResizeRight: return .right
         default: return nil
+        }
+    }
+
+    var directionalResizeTargetMode: DirectionalResizeTargetMode? {
+        switch self {
+        case .resizeUp, .resizeDown, .resizeLeft, .resizeRight:
+            return .step
+        case .maxResizeUp, .maxResizeDown, .maxResizeLeft, .maxResizeRight:
+            return .max
+        default:
+            return nil
         }
     }
 }
@@ -256,13 +278,16 @@ final class DirectionalResizeCalculation: WindowCalculation {
                  currentFrame: CGRect,
                  screenFrame: CGRect,
                  gapSize: CGFloat = 0) -> Resolution {
-        guard let direction = action.directionalResizeDirection else {
+        guard let direction = action.directionalResizeDirection,
+              let targetMode = action.directionalResizeTargetMode else {
             return Resolution(rect: currentFrame, intent: nil)
         }
         let placement = DirectionalResizePlacementClassifier.classify(frame: currentFrame,
                                                                       screenFrame: screenFrame,
                                                                       gapSize: gapSize)
-        guard let intent = DirectionalResizeIntent.resolve(placement: placement, direction: direction),
+        guard let intent = DirectionalResizeIntent.resolve(placement: placement,
+                                                           direction: direction,
+                                                           targetMode: targetMode),
               let targetFraction = nextFraction(currentFrame: currentFrame,
                                                 screenFrame: screenFrame,
                                                 gapSize: gapSize,
@@ -291,11 +316,15 @@ final class DirectionalResizeCalculation: WindowCalculation {
         let epsilon = max(CycleSize.matchingTolerance,
                           Float(1.0 / max(1, intent.axis == .horizontal ? screenFrame.width : screenFrame.height)))
 
-        switch intent.operation {
-        case .expand:
+        switch (intent.targetMode, intent.operation) {
+        case (.step, .expand):
             return fractions.first { $0 > currentFraction + epsilon }
-        case .contract:
+        case (.step, .contract):
             return fractions.last { $0 < currentFraction - epsilon }
+        case (.max, .expand):
+            return fractions.last { $0 > currentFraction + epsilon }
+        case (.max, .contract):
+            return fractions.first { $0 < currentFraction - epsilon }
         }
     }
 

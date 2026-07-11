@@ -163,6 +163,119 @@ class DirectionalResizeTests: XCTestCase {
         XCTAssertEqual(WindowAction.resizeDown.displayName, "Resize Down")
         XCTAssertEqual(WindowAction.resizeLeft.displayName, "Resize Left")
         XCTAssertEqual(WindowAction.resizeRight.displayName, "Resize Right")
+        XCTAssertTrue(WindowAction.active.contains(.maxResizeUp))
+        XCTAssertTrue(WindowAction.active.contains(.maxResizeDown))
+        XCTAssertTrue(WindowAction.active.contains(.maxResizeLeft))
+        XCTAssertTrue(WindowAction.active.contains(.maxResizeRight))
+        XCTAssertEqual(WindowAction.maxResizeUp.displayName, "Max Resize Up")
+        XCTAssertEqual(WindowAction.maxResizeDown.displayName, "Max Resize Down")
+        XCTAssertEqual(WindowAction.maxResizeLeft.displayName, "Max Resize Left")
+        XCTAssertEqual(WindowAction.maxResizeRight.displayName, "Max Resize Right")
+    }
+
+    func testMaxCornerDirectionsJumpDirectlyToFarthestSelectedEndpoint() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let cases: [(WindowAction, CGRect, CGRect)] = [
+            (.maxResizeUp, CGRect(x: 600, y: 450, width: 600, height: 450), CGRect(x: 600, y: 675, width: 600, height: 225)),
+            (.maxResizeDown, CGRect(x: 600, y: 450, width: 600, height: 450), CGRect(x: 600, y: 225, width: 600, height: 675)),
+            (.maxResizeLeft, CGRect(x: 600, y: 450, width: 600, height: 450), CGRect(x: 300, y: 450, width: 900, height: 450)),
+            (.maxResizeRight, CGRect(x: 600, y: 450, width: 600, height: 450), CGRect(x: 900, y: 450, width: 300, height: 450)),
+            (.maxResizeUp, CGRect(x: 600, y: 0, width: 600, height: 450), CGRect(x: 600, y: 0, width: 600, height: 675)),
+            (.maxResizeDown, CGRect(x: 600, y: 0, width: 600, height: 450), CGRect(x: 600, y: 0, width: 600, height: 225)),
+            (.maxResizeLeft, CGRect(x: 600, y: 0, width: 600, height: 450), CGRect(x: 300, y: 0, width: 900, height: 450)),
+            (.maxResizeRight, CGRect(x: 600, y: 0, width: 600, height: 450), CGRect(x: 900, y: 0, width: 300, height: 450)),
+            (.maxResizeDown, CGRect(x: 0, y: 450, width: 600, height: 450), CGRect(x: 0, y: 225, width: 600, height: 675)),
+            (.maxResizeLeft, CGRect(x: 0, y: 450, width: 600, height: 450), CGRect(x: 0, y: 450, width: 300, height: 450)),
+            (.maxResizeRight, CGRect(x: 0, y: 450, width: 600, height: 450), CGRect(x: 0, y: 450, width: 900, height: 450)),
+            (.maxResizeDown, CGRect(x: 0, y: 0, width: 600, height: 450), CGRect(x: 0, y: 0, width: 600, height: 225))
+        ]
+
+        for (action, current, expected) in cases {
+            let resolution = calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame)
+            assertRect(resolution.rect, equals: expected)
+            XCTAssertEqual(resolution.intent?.targetMode, .max)
+        }
+    }
+
+    func testMaxSideDirectionsJumpToEndpointsAndMisalignedDirectionsNoOp() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let validCases: [(WindowAction, CGRect, CGRect)] = [
+            (.maxResizeLeft, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 300, y: 0, width: 900, height: 900)),
+            (.maxResizeRight, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 900, y: 0, width: 300, height: 900)),
+            (.maxResizeRight, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 0, width: 900, height: 900)),
+            (.maxResizeLeft, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 0, width: 300, height: 900)),
+            (.maxResizeDown, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 0, y: 225, width: 1200, height: 675)),
+            (.maxResizeUp, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 0, y: 675, width: 1200, height: 225)),
+            (.maxResizeUp, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 0, y: 0, width: 1200, height: 675)),
+            (.maxResizeDown, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 0, y: 0, width: 1200, height: 225))
+        ]
+        for (action, current, expected) in validCases {
+            assertRect(calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame).rect,
+                       equals: expected)
+        }
+
+        let noOpCases: [(WindowAction, CGRect)] = [
+            (.maxResizeUp, CGRect(x: 600, y: 0, width: 600, height: 900)),
+            (.maxResizeLeft, CGRect(x: 0, y: 450, width: 1200, height: 450)),
+            (.maxResizeRight, CGRect(x: 0, y: 0, width: 1200, height: 450))
+        ]
+        for (action, current) in noOpCases {
+            let resolution = calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame)
+            assertRect(resolution.rect, equals: current)
+            XCTAssertNil(resolution.intent)
+        }
+    }
+
+    func testMaxResizeAtEndpointNoOpsWithoutWrapping() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let largestLeft = CGRect(x: 0, y: 0, width: 900, height: 900)
+        let smallestLeft = CGRect(x: 0, y: 0, width: 300, height: 900)
+
+        XCTAssertNil(calculation.resolve(action: .maxResizeRight,
+                                         currentFrame: largestLeft,
+                                         screenFrame: screenFrame).intent)
+        XCTAssertNil(calculation.resolve(action: .maxResizeLeft,
+                                         currentFrame: smallestLeft,
+                                         screenFrame: screenFrame).intent)
+    }
+
+    func testRegularResizeStillMovesOneStepWhileMaxResizeJumpsToEndpoint() {
+        let current = CGRect(x: 0, y: 0, width: 600, height: 900)
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let step = calculation.resolve(action: .resizeRight, currentFrame: current, screenFrame: screenFrame)
+        let max = calculation.resolve(action: .maxResizeRight, currentFrame: current, screenFrame: screenFrame)
+
+        assertRect(step.rect, equals: CGRect(x: 0, y: 0, width: 800, height: 900))
+        assertRect(max.rect, equals: CGRect(x: 0, y: 0, width: 900, height: 900))
+        XCTAssertEqual(step.intent?.targetMode, .step)
+        XCTAssertEqual(max.intent?.targetMode, .max)
+    }
+
+    func testMaxResizeCooperativeConstraintUsesFarthestAchievableResult() {
+        let current = CGRect(x: 600, y: 0, width: 600, height: 450)
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .maxResizeLeft,
+                                                                                        currentFrame: current,
+                                                                                        screenFrame: screenFrame)
+        let intent = resolution.intent!
+        let constrainedBottomLeft = CooperativeCornerResize.Candidate(id: 2,
+                                                                      frame: CGRect(x: 0, y: 0, width: 600, height: 450),
+                                                                      minimumSize: CGSize(width: 500, height: 100))
+        let plan = CooperativeCornerResize.plan(oldFocusedFrame: current,
+                                                newFocusedFrame: resolution.rect,
+                                                screenFrame: screenFrame,
+                                                candidates: [constrainedBottomLeft],
+                                                axis: intent.axis,
+                                                tolerance: 8,
+                                                minimumSize: CGSize(width: 100, height: 100),
+                                                gapSize: 0,
+                                                captureTolerance: 72,
+                                                movedEdgeOverride: intent.movedEdge,
+                                                candidateDiscoveryFrame: current,
+                                                actionDescription: "test max resize constraint")
+
+        XCTAssertNotNil(plan)
+        assertRect(plan!.focusedFrame, equals: CGRect(x: 500, y: 0, width: 700, height: 450))
+        assertRect(plan!.adjustments[0].newFrame, equals: CGRect(x: 0, y: 0, width: 500, height: 450))
     }
 
     func testSideDirectionsMoveOnlyTheirInternalBoundary() {

@@ -446,7 +446,10 @@ class SettingsViewController: NSViewController {
                 vSplitPopUpButton?.selectCurrentValue()
             }
 
-            let directionalResizeActions: [WindowAction] = [.resizeUp, .resizeDown, .resizeLeft, .resizeRight]
+            let directionalResizeActions: [WindowAction] = [
+                .resizeUp, .resizeDown, .resizeLeft, .resizeRight,
+                .maxResizeUp, .maxResizeDown, .maxResizeLeft, .maxResizeRight
+            ]
             let directionalResizeLabels = directionalResizeActions.map { action -> NSTextField in
                 let label = NSTextField(labelWithString: action.displayName ?? action.name)
                 label.alignment = .right
@@ -978,6 +981,10 @@ class SettingsViewController: NSViewController {
                 directionalResizeLabels[1].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
                 directionalResizeLabels[2].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
                 directionalResizeLabels[3].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[4].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[5].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[6].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[7].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
                 hSplitLabel.widthAnchor.constraint(equalTo: vSplitLabel.widthAnchor),
                 largerWidthLabelStack.widthAnchor.constraint(equalTo: smallerWidthLabelStack.widthAnchor),
                 largerWidthShortcutView.widthAnchor.constraint(equalToConstant: 160),
@@ -1009,6 +1016,10 @@ class SettingsViewController: NSViewController {
                 directionalResizeShortcutViews[1].widthAnchor.constraint(equalToConstant: 160),
                 directionalResizeShortcutViews[2].widthAnchor.constraint(equalToConstant: 160),
                 directionalResizeShortcutViews[3].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[4].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[5].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[6].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[7].widthAnchor.constraint(equalToConstant: 160),
                 widthStepField.trailingAnchor.constraint(equalTo: largerWidthShortcutView.trailingAnchor),
                 showAdditionalSizesCheckbox.leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
                 overlapOffsetCheckbox.leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
@@ -1033,6 +1044,10 @@ class SettingsViewController: NSViewController {
                 directionalResizeShortcutViews[1].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
                 directionalResizeShortcutViews[2].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
                 directionalResizeShortcutViews[3].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[4].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[5].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[6].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[7].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
                 gridHeaderLabel.widthAnchor.constraint(equalTo: mainStackView.widthAnchor),
                 cyclingHintLabel.widthAnchor.constraint(equalTo: mainStackView.widthAnchor, constant: -20),
                 hSplitControlsStack.trailingAnchor.constraint(equalTo: largerWidthShortcutView.trailingAnchor),
