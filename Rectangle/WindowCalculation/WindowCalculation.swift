@@ -100,12 +100,16 @@ struct WindowCalculationResult {
     let resultingAction: WindowAction
     let resultingSubAction: SubWindowAction?
     let resultingScreenFrame: CGRect?
+    let directionalResizeIntent: DirectionalResizeIntent?
+    let isNoOp: Bool
 
     init(rect: CGRect,
          screen: NSScreen,
          resultingAction: WindowAction,
          resultingSubAction: SubWindowAction? = nil,
-         resultingScreenFrame: CGRect? = nil) {
+         resultingScreenFrame: CGRect? = nil,
+         directionalResizeIntent: DirectionalResizeIntent? = nil,
+         isNoOp: Bool = false) {
         
         self.rect = rect
         self.initialRect = rect
@@ -113,6 +117,8 @@ struct WindowCalculationResult {
         self.resultingAction = resultingAction
         self.resultingSubAction = resultingSubAction
         self.resultingScreenFrame = resultingScreenFrame
+        self.directionalResizeIntent = directionalResizeIntent
+        self.isNoOp = isNoOp
     }
 }
 
@@ -266,10 +272,15 @@ class WindowCalculationFactory {
     static let bottomCenterRightSixteenthCalculation = BottomCenterRightSixteenthCalculation()
     static let bottomRightSixteenthCalculation = BottomRightSixteenthCalculation()
     static let specificDisplayCalculation = SpecificDisplayCalculation()
+    static let directionalResizeCalculation = DirectionalResizeCalculation()
 
     static let calculationsByAction: [WindowAction: WindowCalculation] = [
      .leftHalf: leftHalfCalculation,
      .rightHalf: rightHalfCalculation,
+     .resizeUp: directionalResizeCalculation,
+     .resizeDown: directionalResizeCalculation,
+     .resizeLeft: directionalResizeCalculation,
+     .resizeRight: directionalResizeCalculation,
      .maximize: maximizeCalculation,
      .maximizeHeight: maxHeightCalculation,
      .previousDisplay: nextPrevDisplayCalculation,

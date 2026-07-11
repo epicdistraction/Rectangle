@@ -91,13 +91,18 @@ extension WindowManager {
                                      newFocusedFrame: CGRect,
                                      screenFrame: CGRect,
                                      destinationScreenIsCurrentScreen: Bool,
-                                     lastRectangleAction: RectangleAction?) -> CooperativeCornerApplicationPlan? {
+                                     lastRectangleAction: RectangleAction?,
+                                     axisOverride: CornerCycleExpansionAxis? = nil,
+                                     movedEdgeOverride: CooperativeCornerResize.MovedEdge? = nil,
+                                     forceRepeatedResize: Bool = false,
+                                     allowsCycleLookAhead: Bool = true,
+                                     usesFullSplitBoundary: Bool = false) -> CooperativeCornerApplicationPlan? {
         guard Defaults.cooperativeCornerResize.enabled,
               source.allowsCooperativeResize,
               !focusedWindowIsFixedSize,
               destinationScreenIsCurrentScreen,
-              let cooperativeAxis = action.cooperativeResizeAxis,
-              let movedEdge = action.cooperativeResizeMovedEdge
+              let cooperativeAxis = axisOverride ?? action.cooperativeResizeAxis,
+              let movedEdge = movedEdgeOverride ?? action.cooperativeResizeMovedEdge
         else {
             return nil
         }
@@ -105,8 +110,11 @@ extension WindowManager {
         let gapSize = max(0, CGFloat(Defaults.gapSize.value))
         let tolerance = CooperativeCornerResize.detectionTolerance(screenFrame: screenFrame, configuredGap: gapSize)
         let captureTolerance = CooperativeCornerResize.captureTolerance(screenFrame: screenFrame, axis: cooperativeAxis)
-        let isRepeatedCooperativeAction = action.isCompatibleRepeatedResizeAction(with: lastRectangleAction?.action)
-        let actionDescription = isRepeatedCooperativeAction ? "repeated cooperative resize" : "initial corner/side cooperative placement"
+        let isRepeatedCooperativeAction = forceRepeatedResize
+            || action.isCompatibleRepeatedResizeAction(with: lastRectangleAction?.action)
+        let actionDescription = usesFullSplitBoundary
+            ? "directional side split boundary resize"
+            : (isRepeatedCooperativeAction ? "repeated cooperative resize" : "initial corner/side cooperative placement")
         let screenFrameAX = screenFrame.screenFlipped
         let elementsById = AccessibilityElement.getAllWindowElements().reduce(into: [CGWindowID: AccessibilityElement]()) { elements, element in
             guard let candidateId = element.getWindowId(),
@@ -147,6 +155,7 @@ extension WindowManager {
                                                                                   gapSize: gapSize)
             : newFocusedFrame
         if isRepeatedCooperativeAction,
+           allowsCycleLookAhead,
            let lookAheadTarget = cycleLookAheadTargetForMinimumRestrictedAdjacent(action: action,
                                                                                   oldFocusedFrame: oldFocusedFrame,
                                                                                   requestedFocusedFrame: requestedFocusedFrame,
@@ -160,7 +169,13 @@ extension WindowManager {
             requestedFocusedFrame = lookAheadTarget.gappedFrame
             sideSplitRecordingFrame = lookAheadTarget.rawFrame
         }
-        let candidateDiscoveryFrame = isRepeatedCooperativeAction ? oldFocusedFrame : requestedFocusedFrame
+        let baseCandidateDiscoveryFrame = isRepeatedCooperativeAction ? oldFocusedFrame : requestedFocusedFrame
+        let candidateDiscoveryFrame = usesFullSplitBoundary
+            ? fullSplitBoundaryDiscoveryFrame(baseCandidateDiscoveryFrame,
+                                              screenFrame: screenFrame,
+                                              axis: cooperativeAxis,
+                                              gapSize: gapSize)
+            : baseCandidateDiscoveryFrame
         guard let plan = CooperativeCornerResize.plan(oldFocusedFrame: oldFocusedFrame,
                                                       newFocusedFrame: requestedFocusedFrame,
                                                       screenFrame: screenFrame,
@@ -208,6 +223,27 @@ extension WindowManager {
                                                 adjustments: adjustments,
                                                 sideSplitRecordingFrame: sideSplitRecordingFrame,
                                                 debugLog: plan.debugLog)
+    }
+
+    func fullSplitBoundaryDiscoveryFrame(_ frame: CGRect,
+                                         screenFrame: CGRect,
+                                         axis: CornerCycleExpansionAxis,
+                                         gapSize: CGFloat) -> CGRect {
+        var discoveryFrame = frame
+        let gap = max(0, gapSize)
+        switch axis {
+        case .horizontal:
+            let minY = screenFrame.minY + gap
+            let maxY = screenFrame.maxY - (Defaults.skipGapTopEdge.enabled ? 0 : gap)
+            discoveryFrame.origin.y = minY
+            discoveryFrame.size.height = max(0, maxY - minY)
+        case .vertical:
+            let minX = screenFrame.minX + gap
+            let maxX = screenFrame.maxX - gap
+            discoveryFrame.origin.x = minX
+            discoveryFrame.size.width = max(0, maxX - minX)
+        }
+        return discoveryFrame
     }
 
     func applyCooperativeCornerCleanupIfNeeded(focusedWindowId: CGWindowID,
