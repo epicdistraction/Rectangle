@@ -237,9 +237,10 @@ class WindowManager {
         }
 
         if let promotionDisplacement {
-            applyDirectionalPromotionCornerFill(promotionDisplacement,
-                                                destinationCornerFrame: calcResult.initialRect,
-                                                screenFrame: visibleFrameOfDestinationScreen)
+            resultingRect = applyDirectionalPromotionCornerFill(promotionDisplacement,
+                                                                 destinationCornerFrame: calcResult.initialRect,
+                                                                 screenFrame: visibleFrameOfDestinationScreen,
+                                                                 result: resultParameters)
         }
 
         if let cooperativeCornerPlan {

@@ -634,6 +634,52 @@ class DirectionalResizeTests: XCTestCase {
         }
     }
 
+    func testMinimumRestrictedCornerFillReanchorsAndPreservesInternalGap() {
+        typealias Case = (DirectionalResizeDirection, CGRect, CGRect, CGRect, CGRect)
+        let cases: [Case] = [
+            (.up,
+             CGRect(x: 20, y: 565, width: 2104, height: 1215),
+             CGRect(x: 20, y: 160, width: 2104, height: 385),
+             CGRect(x: 20, y: 780, width: 2104, height: 1000),
+             CGRect(x: 20, y: 160, width: 2104, height: 600)),
+            (.down,
+             CGRect(x: 20, y: 160, width: 2104, height: 1215),
+             CGRect(x: 20, y: 1395, width: 2104, height: 385),
+             CGRect(x: 20, y: 160, width: 2104, height: 1000),
+             CGRect(x: 20, y: 1180, width: 2104, height: 600)),
+            (.right,
+             CGRect(x: 425, y: 20, width: 1215, height: 900),
+             CGRect(x: 20, y: 20, width: 385, height: 900),
+             CGRect(x: 640, y: 20, width: 1000, height: 900),
+             CGRect(x: 20, y: 20, width: 600, height: 900)),
+            (.left,
+             CGRect(x: 20, y: 20, width: 1215, height: 900),
+             CGRect(x: 1255, y: 20, width: 385, height: 900),
+             CGRect(x: 20, y: 20, width: 1000, height: 900),
+             CGRect(x: 1040, y: 20, width: 600, height: 900))
+        ]
+
+        for (direction, requestedFocused, requestedFill, expectedFocused, expectedFill) in cases {
+            let entry = DirectionalResizeDisplacementState.Entry(direction: direction,
+                                                                 originPlacement: .topLeftCorner,
+                                                                 displacedWindowIds: [2, 3],
+                                                                 sideFrame: screenFrame,
+                                                                 screenFrame: screenFrame)
+            var realizedFill = requestedFill
+            if direction == .left || direction == .right {
+                realizedFill.size.width = 600
+            } else {
+                realizedFill.size.height = 600
+            }
+            let reconciled = entry.reconciledFrames(requestedFocusedFrame: requestedFocused,
+                                                    requestedFillFrame: requestedFill,
+                                                    realizedFillFrames: [requestedFill, realizedFill])
+
+            assertRect(reconciled.focusedFrame, equals: expectedFocused)
+            assertRect(reconciled.fillFrame, equals: expectedFill)
+        }
+    }
+
     func testPerpendicularCornerDirectionMovesTheFullSideSplitBoundary() {
         let current = CGRect(x: 600, y: 0, width: 600, height: 450)
         let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeLeft,

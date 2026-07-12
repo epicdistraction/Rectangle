@@ -658,6 +658,11 @@ final class DirectionalResizeDisplacementState {
     static let shared = DirectionalResizeDisplacementState()
 
     struct Entry {
+        struct ReconciledFrames {
+            let focusedFrame: CGRect
+            let fillFrame: CGRect
+        }
+
         let direction: DirectionalResizeDirection
         let originPlacement: DirectionalResizePlacement
         let displacedWindowIds: [CGWindowID]
@@ -682,6 +687,44 @@ final class DirectionalResizeDisplacementState {
             }
             guard frame.width > 0, frame.height > 0 else { return nil }
             return frame
+        }
+
+        func reconciledFrames(requestedFocusedFrame: CGRect,
+                              requestedFillFrame: CGRect,
+                              realizedFillFrames: [CGRect]) -> ReconciledFrames {
+            let requestedFillSize = axisSize(requestedFillFrame)
+            let realizedFillSize = realizedFillFrames.map(axisSize).max() ?? requestedFillSize
+            let fillSize = max(requestedFillSize, realizedFillSize)
+            var fillFrame = requestedFillFrame
+            var focusedFrame = requestedFocusedFrame
+
+            switch direction {
+            case .up:
+                let gap = max(0, requestedFocusedFrame.minY - requestedFillFrame.maxY)
+                fillFrame.size.height = fillSize
+                focusedFrame.origin.y = fillFrame.maxY + gap
+                focusedFrame.size.height = max(0, requestedFocusedFrame.maxY - focusedFrame.minY)
+            case .down:
+                let gap = max(0, requestedFillFrame.minY - requestedFocusedFrame.maxY)
+                fillFrame.origin.y = requestedFillFrame.maxY - fillSize
+                fillFrame.size.height = fillSize
+                focusedFrame.size.height = max(0, fillFrame.minY - gap - requestedFocusedFrame.minY)
+            case .right:
+                let gap = max(0, requestedFocusedFrame.minX - requestedFillFrame.maxX)
+                fillFrame.size.width = fillSize
+                focusedFrame.origin.x = fillFrame.maxX + gap
+                focusedFrame.size.width = max(0, requestedFocusedFrame.maxX - focusedFrame.minX)
+            case .left:
+                let gap = max(0, requestedFillFrame.minX - requestedFocusedFrame.maxX)
+                fillFrame.origin.x = requestedFillFrame.maxX - fillSize
+                fillFrame.size.width = fillSize
+                focusedFrame.size.width = max(0, fillFrame.minX - gap - requestedFocusedFrame.minX)
+            }
+            return ReconciledFrames(focusedFrame: focusedFrame, fillFrame: fillFrame)
+        }
+
+        private func axisSize(_ frame: CGRect) -> CGFloat {
+            direction == .left || direction == .right ? frame.width : frame.height
         }
     }
 

@@ -6,11 +6,12 @@ extension WindowManager {
 
     func applyDirectionalPromotionCornerFill(_ displacement: DirectionalResizeDisplacementState.Entry,
                                              destinationCornerFrame: CGRect,
-                                             screenFrame: CGRect) {
+                                             screenFrame: CGRect,
+                                             result: ResultParameters) -> CGRect {
         guard let originAction = displacement.originPlacement.windowAction,
               let rawTargetFrame = displacement.complementaryRawFrame(destinationCornerFrame: destinationCornerFrame)
         else {
-            return
+            return result.windowElement.frame
         }
 
         let gapSize = max(0, Defaults.gapSize.value)
@@ -27,19 +28,33 @@ extension WindowManager {
             return (id, element)
         }
 
+        guard !displacedElements.isEmpty else { return result.windowElement.frame }
+
+        displacedElements.forEach { _, element in
+            element.setFrame(targetFrame.screenFlipped)
+        }
+        let realizedFillFrames = displacedElements.map { $0.1.frame.screenFlipped }
+        let reconciledFrames = displacement.reconciledFrames(requestedFocusedFrame: result.calcResult.rect,
+                                                             requestedFillFrame: targetFrame,
+                                                             realizedFillFrames: realizedFillFrames)
+        let resultingFocusedRect = applyFocusedCooperativeFrameIfNeeded(reconciledFrames.focusedFrame,
+                                                                        result: result,
+                                                                        layoutTolerance: 4)
+
         displacedElements.forEach { id, element in
             if CooperativeCornerResize.frameNeedsApplication(currentFrame: element.frame.screenFlipped,
-                                                             solvedFrame: targetFrame,
+                                                             solvedFrame: reconciledFrames.fillFrame,
                                                              screenFrame: screenFrame,
                                                              layoutTolerance: 4) {
-                element.setFrame(targetFrame.screenFlipped)
-                Logger.log("Directional side-to-corner placement moved displaced window \(id) into \(originAction.name) at the complementary minimum size")
+                element.setFrame(reconciledFrames.fillFrame.screenFlipped)
             }
+            Logger.log("Directional side-to-corner placement moved displaced window \(id) into \(originAction.name) with its realized minimum size and preserved gaps")
             recordAction(windowId: id,
                          resultingRect: element.frame,
                          action: originAction,
                          subAction: nil)
         }
+        return resultingFocusedRect
     }
 
     func applyCooperativeCornerResize(result: ResultParameters,
