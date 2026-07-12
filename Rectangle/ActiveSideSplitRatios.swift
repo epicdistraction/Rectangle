@@ -132,6 +132,15 @@ final class ActiveSideSplitRatios {
             return
         }
 
+        if intent.endpointAction == .promoteCornerToSide
+            || intent.endpointAction == .placeSideIntoCorner {
+            recordAchievedCooperativeAction(intent.placementAction,
+                                            achievedFrame: achievedFrame,
+                                            screenFrame: screenFrame,
+                                            gapSize: gapSize)
+            return
+        }
+
         let oldSize = intent.axis == .horizontal ? previousFrame.width : previousFrame.height
         let achievedSize = intent.axis == .horizontal ? achievedFrame.width : achievedFrame.height
         let movement = achievedSize - oldSize

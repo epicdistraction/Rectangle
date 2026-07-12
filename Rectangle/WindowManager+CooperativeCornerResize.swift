@@ -4,6 +4,44 @@ import Cocoa
 
 extension WindowManager {
 
+    func applyDirectionalPromotionCornerFill(_ displacement: DirectionalResizeDisplacementState.Entry,
+                                             destinationCornerFrame: CGRect,
+                                             screenFrame: CGRect) {
+        guard let originAction = displacement.originPlacement.windowAction,
+              let rawTargetFrame = displacement.complementaryRawFrame(destinationCornerFrame: destinationCornerFrame)
+        else {
+            return
+        }
+
+        let gapSize = max(0, Defaults.gapSize.value)
+        let targetFrame = gapSize > 0 && originAction.gapsApplicable != .none
+            ? GapCalculation.applyGaps(rawTargetFrame,
+                                       dimension: originAction.gapsApplicable,
+                                       sharedEdges: originAction.gapSharedEdge,
+                                       gapSize: gapSize,
+                                       skipTopGap: Defaults.skipGapTopEdge.enabled)
+            : rawTargetFrame
+        let displacedIds = Set(displacement.displacedWindowIds)
+        let displacedElements = AccessibilityElement.getAllWindowElements().compactMap { element -> (CGWindowID, AccessibilityElement)? in
+            guard let id = element.getWindowId(), displacedIds.contains(id) else { return nil }
+            return (id, element)
+        }
+
+        displacedElements.forEach { id, element in
+            if CooperativeCornerResize.frameNeedsApplication(currentFrame: element.frame.screenFlipped,
+                                                             solvedFrame: targetFrame,
+                                                             screenFrame: screenFrame,
+                                                             layoutTolerance: 4) {
+                element.setFrame(targetFrame.screenFlipped)
+                Logger.log("Directional side-to-corner placement moved displaced window \(id) into \(originAction.name) at the complementary minimum size")
+            }
+            recordAction(windowId: id,
+                         resultingRect: element.frame,
+                         action: originAction,
+                         subAction: nil)
+        }
+    }
+
     func applyCooperativeCornerResize(result: ResultParameters,
                                       plan: CooperativeCornerApplicationPlan) -> CGRect {
         var activePlan = plan
