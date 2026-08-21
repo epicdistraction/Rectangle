@@ -94,6 +94,747 @@ class CooperativeResizeSourceTests: XCTestCase {
     }
 }
 
+class DirectionalResizeTests: XCTestCase {
+    private let screenFrame = CGRect(x: 0, y: 0, width: 1200, height: 900)
+    private var savedCycleSizesIsChanged = false
+    private var savedSelectedCycleSizes = Set<CycleSize>()
+    private var savedHorizontalSplitRatio: Float = 50
+    private var savedVerticalSplitRatio: Float = 50
+    private var savedCornerCycleExpansionAxis: CornerCycleExpansionAxis = .horizontal
+
+    override func setUp() {
+        super.setUp()
+        savedCycleSizesIsChanged = Defaults.cycleSizesIsChanged.enabled
+        savedSelectedCycleSizes = Defaults.selectedCycleSizes.value
+        savedHorizontalSplitRatio = Defaults.horizontalSplitRatio.value
+        savedVerticalSplitRatio = Defaults.verticalSplitRatio.value
+        savedCornerCycleExpansionAxis = Defaults.cornerCycleExpansionAxis.value
+        Defaults.cycleSizesIsChanged.enabled = true
+        Defaults.selectedCycleSizes.value = Set(CycleSize.allCases)
+        Defaults.horizontalSplitRatio.value = 50
+        Defaults.verticalSplitRatio.value = 50
+        ActiveSideSplitRatios.shared.resetAll()
+        DirectionalResizeEndpointState.shared.resetAll()
+        DirectionalResizeDisplacementState.shared.resetAll()
+    }
+
+    override func tearDown() {
+        Defaults.cycleSizesIsChanged.enabled = savedCycleSizesIsChanged
+        Defaults.selectedCycleSizes.value = savedSelectedCycleSizes
+        Defaults.horizontalSplitRatio.value = savedHorizontalSplitRatio
+        Defaults.verticalSplitRatio.value = savedVerticalSplitRatio
+        Defaults.cornerCycleExpansionAxis.value = savedCornerCycleExpansionAxis
+        ActiveSideSplitRatios.shared.resetAll()
+        DirectionalResizeEndpointState.shared.resetAll()
+        DirectionalResizeDisplacementState.shared.resetAll()
+        super.tearDown()
+    }
+
+    func testEveryPlacementAndDirectionResolvesToExpectedOperationAndEndpointAction() {
+        typealias Expected = (DirectionalResizePlacement, DirectionalResizeDirection, DirectionalResizeOperation, DirectionalResizeEndpointAction)
+        let cases: [Expected] = [
+            (.rightSide, .left, .expand, .stepResize), (.rightSide, .right, .contract, .stepResize),
+            (.rightSide, .up, .contract, .placeSideIntoCorner), (.rightSide, .down, .contract, .placeSideIntoCorner),
+            (.leftSide, .right, .expand, .stepResize), (.leftSide, .left, .contract, .stepResize),
+            (.leftSide, .up, .contract, .placeSideIntoCorner), (.leftSide, .down, .contract, .placeSideIntoCorner),
+            (.topSide, .down, .expand, .stepResize), (.topSide, .up, .contract, .stepResize),
+            (.topSide, .left, .contract, .placeSideIntoCorner), (.topSide, .right, .contract, .placeSideIntoCorner),
+            (.bottomSide, .up, .expand, .stepResize), (.bottomSide, .down, .contract, .stepResize),
+            (.bottomSide, .left, .contract, .placeSideIntoCorner), (.bottomSide, .right, .contract, .placeSideIntoCorner),
+
+            (.topLeftCorner, .right, .expand, .stepResize), (.topLeftCorner, .down, .expand, .stepResize),
+            (.topLeftCorner, .left, .contract, .stepResize), (.topLeftCorner, .up, .contract, .stepResize),
+            (.topRightCorner, .left, .expand, .stepResize), (.topRightCorner, .down, .expand, .stepResize),
+            (.topRightCorner, .right, .contract, .stepResize), (.topRightCorner, .up, .contract, .stepResize),
+            (.bottomLeftCorner, .right, .expand, .stepResize), (.bottomLeftCorner, .up, .expand, .stepResize),
+            (.bottomLeftCorner, .left, .contract, .stepResize), (.bottomLeftCorner, .down, .contract, .stepResize),
+            (.bottomRightCorner, .left, .expand, .stepResize), (.bottomRightCorner, .up, .expand, .stepResize),
+            (.bottomRightCorner, .right, .contract, .stepResize), (.bottomRightCorner, .down, .contract, .stepResize)
+        ]
+
+        for (placement, direction, expectedOperation, expectedEndpointAction) in cases {
+            let intent = DirectionalResizeIntent.resolve(placement: placement, direction: direction)
+            XCTAssertEqual(intent?.operation, expectedOperation, "Unexpected result for \(placement) + \(direction)")
+            XCTAssertEqual(intent?.endpointAction, expectedEndpointAction, "Unexpected endpoint for \(placement) + \(direction)")
+        }
+    }
+
+    func testDirectionalActionsAreConfigurableWithoutSeparateExpandContractPairs() {
+        XCTAssertTrue(WindowAction.active.contains(.resizeUp))
+        XCTAssertTrue(WindowAction.active.contains(.resizeDown))
+        XCTAssertTrue(WindowAction.active.contains(.resizeLeft))
+        XCTAssertTrue(WindowAction.active.contains(.resizeRight))
+        XCTAssertEqual(WindowAction.resizeUp.displayName, "Resize Up")
+        XCTAssertEqual(WindowAction.resizeDown.displayName, "Resize Down")
+        XCTAssertEqual(WindowAction.resizeLeft.displayName, "Resize Left")
+        XCTAssertEqual(WindowAction.resizeRight.displayName, "Resize Right")
+        XCTAssertTrue(WindowAction.active.contains(.maxResizeUp))
+        XCTAssertTrue(WindowAction.active.contains(.maxResizeDown))
+        XCTAssertTrue(WindowAction.active.contains(.maxResizeLeft))
+        XCTAssertTrue(WindowAction.active.contains(.maxResizeRight))
+        XCTAssertEqual(WindowAction.maxResizeUp.displayName, "Max Resize Up")
+        XCTAssertEqual(WindowAction.maxResizeDown.displayName, "Max Resize Down")
+        XCTAssertEqual(WindowAction.maxResizeLeft.displayName, "Max Resize Left")
+        XCTAssertEqual(WindowAction.maxResizeRight.displayName, "Max Resize Right")
+    }
+
+    func testMaxCornerDirectionsJumpDirectlyToFarthestSelectedEndpoint() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let cases: [(WindowAction, CGRect, CGRect)] = [
+            (.maxResizeUp, CGRect(x: 600, y: 450, width: 600, height: 450), CGRect(x: 600, y: 675, width: 600, height: 225)),
+            (.maxResizeDown, CGRect(x: 600, y: 450, width: 600, height: 450), CGRect(x: 600, y: 225, width: 600, height: 675)),
+            (.maxResizeLeft, CGRect(x: 600, y: 450, width: 600, height: 450), CGRect(x: 300, y: 450, width: 900, height: 450)),
+            (.maxResizeRight, CGRect(x: 600, y: 450, width: 600, height: 450), CGRect(x: 900, y: 450, width: 300, height: 450)),
+            (.maxResizeUp, CGRect(x: 600, y: 0, width: 600, height: 450), CGRect(x: 600, y: 0, width: 600, height: 675)),
+            (.maxResizeDown, CGRect(x: 600, y: 0, width: 600, height: 450), CGRect(x: 600, y: 0, width: 600, height: 225)),
+            (.maxResizeLeft, CGRect(x: 600, y: 0, width: 600, height: 450), CGRect(x: 300, y: 0, width: 900, height: 450)),
+            (.maxResizeRight, CGRect(x: 600, y: 0, width: 600, height: 450), CGRect(x: 900, y: 0, width: 300, height: 450)),
+            (.maxResizeDown, CGRect(x: 0, y: 450, width: 600, height: 450), CGRect(x: 0, y: 225, width: 600, height: 675)),
+            (.maxResizeLeft, CGRect(x: 0, y: 450, width: 600, height: 450), CGRect(x: 0, y: 450, width: 300, height: 450)),
+            (.maxResizeRight, CGRect(x: 0, y: 450, width: 600, height: 450), CGRect(x: 0, y: 450, width: 900, height: 450)),
+            (.maxResizeDown, CGRect(x: 0, y: 0, width: 600, height: 450), CGRect(x: 0, y: 0, width: 600, height: 225))
+        ]
+
+        for (action, current, expected) in cases {
+            let resolution = calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame)
+            assertRect(resolution.rect, equals: expected)
+            XCTAssertEqual(resolution.intent?.targetMode, .max)
+        }
+    }
+
+    func testMaxSideDirectionsJumpToEndpointsAndPerpendicularDirectionsPlaceCorners() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let validCases: [(WindowAction, CGRect, CGRect)] = [
+            (.maxResizeLeft, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 300, y: 0, width: 900, height: 900)),
+            (.maxResizeRight, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 900, y: 0, width: 300, height: 900)),
+            (.maxResizeRight, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 0, width: 900, height: 900)),
+            (.maxResizeLeft, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 0, width: 300, height: 900)),
+            (.maxResizeDown, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 0, y: 225, width: 1200, height: 675)),
+            (.maxResizeUp, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 0, y: 675, width: 1200, height: 225)),
+            (.maxResizeUp, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 0, y: 0, width: 1200, height: 675)),
+            (.maxResizeDown, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 0, y: 0, width: 1200, height: 225))
+        ]
+        for (action, current, expected) in validCases {
+            assertRect(calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame).rect,
+                       equals: expected)
+        }
+
+        let cornerCases: [(WindowAction, CGRect, CGRect)] = [
+            (.maxResizeUp, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 600, y: 225, width: 600, height: 675)),
+            (.maxResizeDown, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 600, y: 0, width: 600, height: 675)),
+            (.maxResizeUp, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 225, width: 600, height: 675)),
+            (.maxResizeDown, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 0, width: 600, height: 675)),
+            (.maxResizeLeft, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 0, y: 450, width: 900, height: 450)),
+            (.maxResizeRight, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 300, y: 450, width: 900, height: 450)),
+            (.maxResizeLeft, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 0, y: 0, width: 900, height: 450)),
+            (.maxResizeRight, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 300, y: 0, width: 900, height: 450))
+        ]
+        for (action, current, expected) in cornerCases {
+            let resolution = calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame)
+            assertRect(resolution.rect, equals: expected)
+            XCTAssertEqual(resolution.endpointAction, .placeSideIntoCorner)
+        }
+    }
+
+    func testMaxResizeAtEndpointNoOpsWithoutWrapping() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let largestLeft = CGRect(x: 0, y: 0, width: 900, height: 900)
+        let smallestLeft = CGRect(x: 0, y: 0, width: 300, height: 900)
+
+        XCTAssertNil(calculation.resolve(action: .maxResizeRight,
+                                         currentFrame: largestLeft,
+                                         screenFrame: screenFrame).intent)
+        XCTAssertNil(calculation.resolve(action: .maxResizeLeft,
+                                         currentFrame: smallestLeft,
+                                         screenFrame: screenFrame).intent)
+    }
+
+    func testRegularResizeStillMovesOneStepWhileMaxResizeJumpsToEndpoint() {
+        let current = CGRect(x: 0, y: 0, width: 600, height: 900)
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let step = calculation.resolve(action: .resizeRight, currentFrame: current, screenFrame: screenFrame)
+        let max = calculation.resolve(action: .maxResizeRight, currentFrame: current, screenFrame: screenFrame)
+
+        assertRect(step.rect, equals: CGRect(x: 0, y: 0, width: 800, height: 900))
+        assertRect(max.rect, equals: CGRect(x: 0, y: 0, width: 900, height: 900))
+        XCTAssertEqual(step.intent?.targetMode, .step)
+        XCTAssertEqual(max.intent?.targetMode, .max)
+    }
+
+    func testMaxResizeCooperativeConstraintUsesFarthestAchievableResult() {
+        let current = CGRect(x: 600, y: 0, width: 600, height: 450)
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .maxResizeLeft,
+                                                                                        currentFrame: current,
+                                                                                        screenFrame: screenFrame)
+        let intent = resolution.intent!
+        let constrainedBottomLeft = CooperativeCornerResize.Candidate(id: 2,
+                                                                      frame: CGRect(x: 0, y: 0, width: 600, height: 450),
+                                                                      minimumSize: CGSize(width: 500, height: 100))
+        let plan = CooperativeCornerResize.plan(oldFocusedFrame: current,
+                                                newFocusedFrame: resolution.rect,
+                                                screenFrame: screenFrame,
+                                                candidates: [constrainedBottomLeft],
+                                                axis: intent.axis,
+                                                tolerance: 8,
+                                                minimumSize: CGSize(width: 100, height: 100),
+                                                gapSize: 0,
+                                                captureTolerance: 72,
+                                                movedEdgeOverride: intent.movedEdge,
+                                                candidateDiscoveryFrame: current,
+                                                actionDescription: "test max resize constraint")
+
+        XCTAssertNotNil(plan)
+        assertRect(plan!.focusedFrame, equals: CGRect(x: 500, y: 0, width: 700, height: 450))
+        assertRect(plan!.adjustments[0].newFrame, equals: CGRect(x: 0, y: 0, width: 500, height: 450))
+    }
+
+    func testSideDirectionsMoveOnlyTheirInternalBoundary() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let cases: [(WindowAction, CGRect, CGRect)] = [
+            (.resizeLeft, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 400, y: 0, width: 800, height: 900)),
+            (.resizeRight, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 800, y: 0, width: 400, height: 900)),
+            (.resizeRight, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 0, width: 800, height: 900)),
+            (.resizeLeft, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 0, width: 400, height: 900)),
+            (.resizeDown, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 0, y: 300, width: 1200, height: 600)),
+            (.resizeUp, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 0, y: 600, width: 1200, height: 300)),
+            (.resizeUp, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 0, y: 0, width: 1200, height: 600)),
+            (.resizeDown, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 0, y: 0, width: 1200, height: 300))
+        ]
+
+        for (action, current, expected) in cases {
+            let resolution = calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame)
+            assertRect(resolution.rect, equals: expected)
+            XCTAssertNotNil(resolution.intent)
+        }
+    }
+
+    func testPerpendicularSideDirectionsPlaceRequestedCornerAtMaximumExtent() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let cases: [(WindowAction, CGRect, CGRect, WindowAction)] = [
+            (.resizeUp, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 600, y: 225, width: 600, height: 675), .topRight),
+            (.resizeDown, CGRect(x: 600, y: 0, width: 600, height: 900), CGRect(x: 600, y: 0, width: 600, height: 675), .bottomRight),
+            (.resizeUp, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 225, width: 600, height: 675), .topLeft),
+            (.resizeDown, CGRect(x: 0, y: 0, width: 600, height: 900), CGRect(x: 0, y: 0, width: 600, height: 675), .bottomLeft),
+            (.resizeLeft, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 0, y: 450, width: 900, height: 450), .topLeft),
+            (.resizeRight, CGRect(x: 0, y: 450, width: 1200, height: 450), CGRect(x: 300, y: 450, width: 900, height: 450), .topRight),
+            (.resizeLeft, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 0, y: 0, width: 900, height: 450), .bottomLeft),
+            (.resizeRight, CGRect(x: 0, y: 0, width: 1200, height: 450), CGRect(x: 300, y: 0, width: 900, height: 450), .bottomRight)
+        ]
+
+        for (action, current, expected, expectedPlacementAction) in cases {
+            let resolution = calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame)
+            assertRect(resolution.rect, equals: expected)
+            XCTAssertEqual(resolution.intent?.placementAction, expectedPlacementAction)
+            XCTAssertEqual(resolution.endpointAction, .placeSideIntoCorner)
+        }
+    }
+
+    func testCornerExpansionAtMaximumPromotesToCorrespondingSide() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let cases: [(WindowAction, CGRect, CGRect, WindowAction)] = [
+            (.resizeDown, CGRect(x: 600, y: 225, width: 600, height: 675), CGRect(x: 600, y: 0, width: 600, height: 900), .rightHalf),
+            (.resizeUp, CGRect(x: 600, y: 0, width: 600, height: 675), CGRect(x: 600, y: 0, width: 600, height: 900), .rightHalf),
+            (.resizeDown, CGRect(x: 0, y: 225, width: 600, height: 675), CGRect(x: 0, y: 0, width: 600, height: 900), .leftHalf),
+            (.resizeUp, CGRect(x: 0, y: 0, width: 600, height: 675), CGRect(x: 0, y: 0, width: 600, height: 900), .leftHalf),
+            (.resizeRight, CGRect(x: 0, y: 450, width: 900, height: 450), CGRect(x: 0, y: 450, width: 1200, height: 450), .topHalf),
+            (.resizeLeft, CGRect(x: 300, y: 450, width: 900, height: 450), CGRect(x: 0, y: 450, width: 1200, height: 450), .topHalf),
+            (.resizeRight, CGRect(x: 0, y: 0, width: 900, height: 450), CGRect(x: 0, y: 0, width: 1200, height: 450), .bottomHalf),
+            (.resizeLeft, CGRect(x: 300, y: 0, width: 900, height: 450), CGRect(x: 0, y: 0, width: 1200, height: 450), .bottomHalf)
+        ]
+
+        for (action, current, expected, expectedPlacementAction) in cases {
+            let resolution = calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame)
+            assertRect(resolution.rect, equals: expected)
+            XCTAssertEqual(resolution.intent?.placementAction, expectedPlacementAction)
+            XCTAssertEqual(resolution.endpointAction, .promoteCornerToSide)
+        }
+    }
+
+    func testCornerContractionAtMinimumStillNoOps() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let cases: [(WindowAction, CGRect)] = [
+            (.resizeUp, CGRect(x: 600, y: 675, width: 600, height: 225)),
+            (.resizeDown, CGRect(x: 600, y: 0, width: 600, height: 225)),
+            (.resizeLeft, CGRect(x: 0, y: 450, width: 300, height: 450)),
+            (.resizeRight, CGRect(x: 900, y: 450, width: 300, height: 450))
+        ]
+
+        for (action, current) in cases {
+            let resolution = calculation.resolve(action: action, currentFrame: current, screenFrame: screenFrame)
+            assertRect(resolution.rect, equals: current)
+            XCTAssertEqual(resolution.endpointAction, .noop)
+        }
+    }
+
+    func testConstrainedAchievedEndpointPromotesOnNextMatchingDirection() {
+        let windowId: CGWindowID = 42
+        let current = CGRect(x: 600, y: 450, width: 600, height: 450)
+        let requested = CGRect(x: 600, y: 300, width: 600, height: 600)
+        let achieved = CGRect(x: 600, y: 350, width: 600, height: 550)
+        let intent = DirectionalResizeIntent.resolve(placement: .topRightCorner, direction: .down)!
+        DirectionalResizeEndpointState.shared.recordAttempt(windowId: windowId,
+                                                            intent: intent,
+                                                            previousFrame: current,
+                                                            requestedFrame: requested,
+                                                            achievedFrame: achieved,
+                                                            screenFrame: screenFrame)
+
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeDown,
+                                                                                        windowId: windowId,
+                                                                                        currentFrame: achieved,
+                                                                                        screenFrame: screenFrame)
+
+        assertRect(resolution.rect, equals: CGRect(x: 600, y: 0, width: 600, height: 900))
+        XCTAssertEqual(resolution.endpointAction, .promoteCornerToSide)
+        XCTAssertEqual(resolution.intent?.placementAction, .rightHalf)
+    }
+
+    func testFullyBlockedExpansionPromotesOnFollowingMatchingDirection() {
+        let windowId: CGWindowID = 44
+        let current = CGRect(x: 600, y: 300, width: 600, height: 600)
+        let requested = CGRect(x: 600, y: 225, width: 600, height: 675)
+        let intent = DirectionalResizeIntent.resolve(placement: .topRightCorner, direction: .down)!
+        DirectionalResizeEndpointState.shared.recordAttempt(windowId: windowId,
+                                                            intent: intent,
+                                                            previousFrame: current,
+                                                            requestedFrame: requested,
+                                                            achievedFrame: current,
+                                                            screenFrame: screenFrame)
+
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeDown,
+                                                                                        windowId: windowId,
+                                                                                        currentFrame: current,
+                                                                                        screenFrame: screenFrame)
+
+        XCTAssertEqual(resolution.endpointAction, .promoteCornerToSide)
+        assertRect(resolution.rect, equals: CGRect(x: 600, y: 0, width: 600, height: 900))
+    }
+
+    func testConstrainedEndpointRequiresTheNextMatchingDirectionAndFrame() {
+        let windowId: CGWindowID = 43
+        let current = CGRect(x: 600, y: 450, width: 600, height: 450)
+        let requested = CGRect(x: 600, y: 300, width: 600, height: 600)
+        let achieved = CGRect(x: 600, y: 350, width: 600, height: 550)
+        let intent = DirectionalResizeIntent.resolve(placement: .topRightCorner, direction: .down)!
+        DirectionalResizeEndpointState.shared.recordAttempt(windowId: windowId,
+                                                            intent: intent,
+                                                            previousFrame: current,
+                                                            requestedFrame: requested,
+                                                            achievedFrame: achieved,
+                                                            screenFrame: screenFrame)
+
+        let differentDirection = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeLeft,
+                                                                                                 windowId: windowId,
+                                                                                                 currentFrame: achieved,
+                                                                                                 screenFrame: screenFrame)
+        XCTAssertEqual(differentDirection.endpointAction, .stepResize)
+
+        let originalDirection = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeDown,
+                                                                                                windowId: windowId,
+                                                                                                currentFrame: achieved,
+                                                                                                screenFrame: screenFrame)
+        XCTAssertEqual(originalDirection.endpointAction, .stepResize)
+        assertRect(originalDirection.rect, equals: requested)
+    }
+
+    func testPlacementTransitionsUpdateRuntimeRatiosWithoutChangingSavedDefaults() {
+        let sideToCorner = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeDown,
+                                                                                          currentFrame: CGRect(x: 720, y: 0, width: 480, height: 900),
+                                                                                          screenFrame: screenFrame)
+        ActiveSideSplitRatios.shared.recordAchievedDirectionalResize(sideToCorner.intent!,
+                                                                      previousFrame: CGRect(x: 720, y: 0, width: 480, height: 900),
+                                                                      achievedFrame: sideToCorner.rect,
+                                                                      screenFrame: screenFrame,
+                                                                      gapSize: 0)
+
+        XCTAssertEqual(ActiveSideSplitRatios.shared.horizontalRatio(for: screenFrame), 0.6, accuracy: 0.001)
+        XCTAssertEqual(ActiveSideSplitRatios.shared.verticalRatio(for: screenFrame), 0.25, accuracy: 0.001)
+        XCTAssertEqual(Defaults.horizontalSplitRatio.value, 50)
+        XCTAssertEqual(Defaults.verticalSplitRatio.value, 50)
+    }
+
+    func testDetachedFrameInferenceRequiresAConfidentClosestEdge() {
+        let nearRight = CGRect(x: 680, y: 200, width: 500, height: 500)
+        XCTAssertEqual(DirectionalResizePlacementClassifier.classify(frame: nearRight,
+                                                                    screenFrame: screenFrame,
+                                                                    gapSize: 0),
+                       .rightSide)
+
+        let centered = CGRect(x: 400, y: 300, width: 400, height: 300)
+        XCTAssertEqual(DirectionalResizePlacementClassifier.classify(frame: centered,
+                                                                    screenFrame: screenFrame,
+                                                                    gapSize: 0),
+                       .floatingOrAmbiguous)
+    }
+
+    func testCornerDirectionsMoveOnlyRequestedAxisAndIgnoreCyclicAxisSetting() {
+        Defaults.cornerCycleExpansionAxis.value = .vertical
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let topLeft = CGRect(x: 0, y: 450, width: 600, height: 450)
+
+        let horizontal = calculation.resolve(action: .resizeRight,
+                                             currentFrame: topLeft,
+                                             screenFrame: screenFrame)
+        assertRect(horizontal.rect, equals: CGRect(x: 0, y: 450, width: 800, height: 450))
+        XCTAssertEqual(horizontal.intent?.axis, .horizontal)
+
+        Defaults.cornerCycleExpansionAxis.value = .horizontal
+        let vertical = calculation.resolve(action: .resizeDown,
+                                           currentFrame: topLeft,
+                                           screenFrame: screenFrame)
+        assertRect(vertical.rect, equals: CGRect(x: 0, y: 300, width: 600, height: 600))
+        XCTAssertEqual(vertical.intent?.axis, .vertical)
+    }
+
+    func testInBetweenRatiosChooseNextPresetAndPresetBoundsDoNotWrap() {
+        let calculation = WindowCalculationFactory.directionalResizeCalculation
+        let between = CGRect(x: 0, y: 0, width: 720, height: 900)
+        assertRect(calculation.resolve(action: .resizeRight, currentFrame: between, screenFrame: screenFrame).rect,
+                   equals: CGRect(x: 0, y: 0, width: 800, height: 900))
+        assertRect(calculation.resolve(action: .resizeLeft, currentFrame: between, screenFrame: screenFrame).rect,
+                   equals: CGRect(x: 0, y: 0, width: 600, height: 900))
+
+        let smallest = CGRect(x: 0, y: 0, width: 300, height: 900)
+        let largest = CGRect(x: 0, y: 0, width: 900, height: 900)
+        XCTAssertNil(calculation.resolve(action: .resizeLeft, currentFrame: smallest, screenFrame: screenFrame).intent)
+        XCTAssertNil(calculation.resolve(action: .resizeRight, currentFrame: largest, screenFrame: screenFrame).intent)
+    }
+
+    func testAchievedDirectionalResizeUpdatesOnlyRuntimeAxisAndNotSavedDefaults() {
+        let intent = DirectionalResizeIntent.resolve(placement: .topLeftCorner, direction: .right)!
+        let previous = CGRect(x: 0, y: 450, width: 600, height: 450)
+        let achieved = CGRect(x: 0, y: 450, width: 780, height: 450)
+
+        ActiveSideSplitRatios.shared.recordAchievedDirectionalResize(intent,
+                                                                      previousFrame: previous,
+                                                                      achievedFrame: achieved,
+                                                                      screenFrame: screenFrame,
+                                                                      gapSize: 0)
+
+        XCTAssertEqual(ActiveSideSplitRatios.shared.horizontalRatio(for: screenFrame), 0.65, accuracy: 0.001)
+        XCTAssertEqual(ActiveSideSplitRatios.shared.verticalRatio(for: screenFrame), 0.5, accuracy: 0.001)
+        XCTAssertEqual(Defaults.horizontalSplitRatio.value, 50)
+        XCTAssertEqual(Defaults.verticalSplitRatio.value, 50)
+    }
+
+    func testConstraintResultCannotUpdateRatioInOppositeDirection() {
+        let intent = DirectionalResizeIntent.resolve(placement: .bottomRightCorner, direction: .up)!
+        let previous = CGRect(x: 600, y: 0, width: 600, height: 450)
+        let wrongDirection = CGRect(x: 600, y: 0, width: 600, height: 400)
+
+        ActiveSideSplitRatios.shared.recordAchievedDirectionalResize(intent,
+                                                                      previousFrame: previous,
+                                                                      achievedFrame: wrongDirection,
+                                                                      screenFrame: screenFrame,
+                                                                      gapSize: 0)
+        XCTAssertEqual(ActiveSideSplitRatios.shared.verticalRatio(for: screenFrame), 0.5, accuracy: 0.001)
+    }
+
+    func testResolvedIntentDrivesCooperativeInternalBoundaryMovement() {
+        let current = CGRect(x: 600, y: 0, width: 600, height: 450)
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeUp,
+                                                                                        currentFrame: current,
+                                                                                        screenFrame: screenFrame)
+        let intent = resolution.intent!
+        let topRight = CooperativeCornerResize.Candidate(id: 2,
+                                                         frame: CGRect(x: 600, y: 450, width: 600, height: 450))
+        let plan = CooperativeCornerResize.plan(oldFocusedFrame: current,
+                                                newFocusedFrame: resolution.rect,
+                                                screenFrame: screenFrame,
+                                                candidates: [topRight],
+                                                axis: intent.axis,
+                                                tolerance: 8,
+                                                minimumSize: CGSize(width: 100, height: 100),
+                                                gapSize: 0,
+                                                captureTolerance: 72,
+                                                movedEdgeOverride: intent.movedEdge)
+
+        XCTAssertNotNil(plan)
+        assertRect(plan!.focusedFrame, equals: CGRect(x: 600, y: 0, width: 600, height: 600))
+        assertRect(plan!.adjustments[0].newFrame, equals: CGRect(x: 600, y: 600, width: 600, height: 300))
+    }
+
+    func testCornerPromotionRejectsCooperativePlanThatCannotReachSide() {
+        let current = CGRect(x: 600, y: 225, width: 600, height: 675)
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeDown,
+                                                                                        currentFrame: current,
+                                                                                        screenFrame: screenFrame)
+        let intent = resolution.intent!
+        let bottomRight = CooperativeCornerResize.Candidate(id: 2,
+                                                            frame: CGRect(x: 600, y: 0, width: 600, height: 225),
+                                                            minimumSize: CGSize(width: 100, height: 100))
+        let plan = CooperativeCornerResize.plan(oldFocusedFrame: current,
+                                                newFocusedFrame: resolution.rect,
+                                                screenFrame: screenFrame,
+                                                candidates: [bottomRight],
+                                                axis: intent.axis,
+                                                tolerance: 8,
+                                                minimumSize: CGSize(width: 100, height: 100),
+                                                gapSize: 0,
+                                                captureTolerance: 72,
+                                                movedEdgeOverride: intent.movedEdge,
+                                                candidateDiscoveryFrame: current,
+                                                actionDescription: "test directional corner promotion")
+
+        XCTAssertEqual(intent.endpointAction, .promoteCornerToSide)
+        XCTAssertNotNil(plan)
+        assertRect(plan!.focusedFrame, equals: CGRect(x: 600, y: 100, width: 600, height: 800))
+        assertRect(plan!.adjustments[0].newFrame, equals: CGRect(x: 600, y: 0, width: 600, height: 100))
+        XCTAssertFalse(intent.acceptsCooperativeFocusedFrame(plan!.focusedFrame,
+                                                             requestedFrame: resolution.rect))
+        XCTAssertTrue(intent.acceptsCooperativeFocusedFrame(resolution.rect,
+                                                            requestedFrame: resolution.rect))
+    }
+
+    func testFallbackPromotionCarriesDisplacedWindowsIntoOriginCorner() {
+        let windowId: CGWindowID = 45
+        let sideFrame = CGRect(x: 600, y: 0, width: 600, height: 900)
+        let promotionIntent = DirectionalResizeIntent.resolve(placement: .topRightCorner,
+                                                              direction: .down)!.promotingCornerToSide()!
+        DirectionalResizeDisplacementState.shared.recordFallbackPromotion(windowId: windowId,
+                                                                          intent: promotionIntent,
+                                                                          displacedWindowIds: [3, 2, 3],
+                                                                          sideFrame: sideFrame,
+                                                                          screenFrame: screenFrame)
+        let cornerIntent = DirectionalResizeIntent.resolve(placement: .rightSide, direction: .down)!
+        let displacement = DirectionalResizeDisplacementState.shared.consumeIfMatching(windowId: windowId,
+                                                                                        intent: cornerIntent,
+                                                                                        currentFrame: sideFrame,
+                                                                                        screenFrame: screenFrame)
+
+        XCTAssertEqual(displacement?.originPlacement, .topRightCorner)
+        XCTAssertEqual(displacement?.displacedWindowIds, [2, 3])
+        assertRect(displacement!.complementaryRawFrame(destinationCornerFrame: CGRect(x: 600,
+                                                                                     y: 0,
+                                                                                     width: 600,
+                                                                                     height: 675))!,
+                   equals: CGRect(x: 600, y: 675, width: 600, height: 225))
+    }
+
+    func testComplementaryOriginCornerFramesFillEveryDirectionalTransition() {
+        typealias Case = (DirectionalResizeDirection, DirectionalResizePlacement, CGRect, CGRect)
+        let cases: [Case] = [
+            (.down, .topRightCorner, CGRect(x: 600, y: 0, width: 600, height: 675), CGRect(x: 600, y: 675, width: 600, height: 225)),
+            (.up, .bottomRightCorner, CGRect(x: 600, y: 225, width: 600, height: 675), CGRect(x: 600, y: 0, width: 600, height: 225)),
+            (.down, .topLeftCorner, CGRect(x: 0, y: 0, width: 600, height: 675), CGRect(x: 0, y: 675, width: 600, height: 225)),
+            (.up, .bottomLeftCorner, CGRect(x: 0, y: 225, width: 600, height: 675), CGRect(x: 0, y: 0, width: 600, height: 225)),
+            (.right, .topLeftCorner, CGRect(x: 300, y: 450, width: 900, height: 450), CGRect(x: 0, y: 450, width: 300, height: 450)),
+            (.left, .topRightCorner, CGRect(x: 0, y: 450, width: 900, height: 450), CGRect(x: 900, y: 450, width: 300, height: 450)),
+            (.right, .bottomLeftCorner, CGRect(x: 300, y: 0, width: 900, height: 450), CGRect(x: 0, y: 0, width: 300, height: 450)),
+            (.left, .bottomRightCorner, CGRect(x: 0, y: 0, width: 900, height: 450), CGRect(x: 900, y: 0, width: 300, height: 450))
+        ]
+
+        for (direction, originPlacement, destination, expected) in cases {
+            let entry = DirectionalResizeDisplacementState.Entry(direction: direction,
+                                                                 originPlacement: originPlacement,
+                                                                 displacedWindowIds: [2],
+                                                                 sideFrame: screenFrame,
+                                                                 screenFrame: screenFrame)
+            assertRect(entry.complementaryRawFrame(destinationCornerFrame: destination)!, equals: expected)
+        }
+    }
+
+    func testMinimumRestrictedCornerFillReanchorsAndPreservesInternalGap() {
+        typealias Case = (DirectionalResizeDirection, CGRect, CGRect, CGRect, CGRect)
+        let cases: [Case] = [
+            (.up,
+             CGRect(x: 20, y: 565, width: 2104, height: 1215),
+             CGRect(x: 20, y: 160, width: 2104, height: 385),
+             CGRect(x: 20, y: 780, width: 2104, height: 1000),
+             CGRect(x: 20, y: 160, width: 2104, height: 600)),
+            (.down,
+             CGRect(x: 20, y: 160, width: 2104, height: 1215),
+             CGRect(x: 20, y: 1395, width: 2104, height: 385),
+             CGRect(x: 20, y: 160, width: 2104, height: 1000),
+             CGRect(x: 20, y: 1180, width: 2104, height: 600)),
+            (.right,
+             CGRect(x: 425, y: 20, width: 1215, height: 900),
+             CGRect(x: 20, y: 20, width: 385, height: 900),
+             CGRect(x: 640, y: 20, width: 1000, height: 900),
+             CGRect(x: 20, y: 20, width: 600, height: 900)),
+            (.left,
+             CGRect(x: 20, y: 20, width: 1215, height: 900),
+             CGRect(x: 1255, y: 20, width: 385, height: 900),
+             CGRect(x: 20, y: 20, width: 1000, height: 900),
+             CGRect(x: 1040, y: 20, width: 600, height: 900))
+        ]
+
+        for (direction, requestedFocused, requestedFill, expectedFocused, expectedFill) in cases {
+            let entry = DirectionalResizeDisplacementState.Entry(direction: direction,
+                                                                 originPlacement: .topLeftCorner,
+                                                                 displacedWindowIds: [2, 3],
+                                                                 sideFrame: screenFrame,
+                                                                 screenFrame: screenFrame)
+            var realizedFill = requestedFill
+            if direction == .left || direction == .right {
+                realizedFill.size.width = 600
+            } else {
+                realizedFill.size.height = 600
+            }
+            let reconciled = entry.reconciledFrames(requestedFocusedFrame: requestedFocused,
+                                                    requestedFillFrame: requestedFill,
+                                                    realizedFillFrames: [requestedFill, realizedFill])
+
+            assertRect(reconciled.focusedFrame, equals: expectedFocused)
+            assertRect(reconciled.fillFrame, equals: expectedFill)
+        }
+    }
+
+    func testPerpendicularCornerDirectionMovesTheFullSideSplitBoundary() {
+        let current = CGRect(x: 600, y: 0, width: 600, height: 450)
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeLeft,
+                                                                                        currentFrame: current,
+                                                                                        screenFrame: screenFrame)
+        let intent = resolution.intent!
+        XCTAssertTrue(intent.usesFullSplitBoundary(cyclicCornerAxis: .vertical))
+        XCTAssertFalse(intent.usesFullSplitBoundary(cyclicCornerAxis: .horizontal))
+
+        let candidates = [
+            CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 0, width: 600, height: 450)),
+            CooperativeCornerResize.Candidate(id: 3, frame: CGRect(x: 600, y: 450, width: 600, height: 450)),
+            CooperativeCornerResize.Candidate(id: 4, frame: CGRect(x: 0, y: 450, width: 600, height: 450))
+        ]
+        let fullRightColumn = CGRect(x: 600, y: 0, width: 600, height: 900)
+        let plan = CooperativeCornerResize.plan(oldFocusedFrame: current,
+                                                newFocusedFrame: resolution.rect,
+                                                screenFrame: screenFrame,
+                                                candidates: candidates,
+                                                axis: intent.axis,
+                                                tolerance: 8,
+                                                minimumSize: CGSize(width: 100, height: 100),
+                                                gapSize: 0,
+                                                captureTolerance: 72,
+                                                movedEdgeOverride: intent.movedEdge,
+                                                candidateDiscoveryFrame: fullRightColumn,
+                                                actionDescription: "test directional side split boundary resize")
+
+        XCTAssertNotNil(plan)
+        assertRect(plan!.focusedFrame, equals: CGRect(x: 400, y: 0, width: 800, height: 450))
+        let adjustments = Dictionary(uniqueKeysWithValues: plan!.adjustments.map { ($0.id, $0.newFrame) })
+        assertRect(adjustments[2]!, equals: CGRect(x: 0, y: 0, width: 400, height: 450))
+        assertRect(adjustments[3]!, equals: CGRect(x: 400, y: 450, width: 800, height: 450))
+        assertRect(adjustments[4]!, equals: CGRect(x: 0, y: 450, width: 400, height: 450))
+    }
+
+    func testSameAxisCornerDirectionKeepsCyclicRowScope() {
+        let current = CGRect(x: 600, y: 0, width: 600, height: 450)
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeLeft,
+                                                                                        currentFrame: current,
+                                                                                        screenFrame: screenFrame)
+        let intent = resolution.intent!
+        let candidates = [
+            CooperativeCornerResize.Candidate(id: 2, frame: CGRect(x: 0, y: 0, width: 600, height: 450)),
+            CooperativeCornerResize.Candidate(id: 3, frame: CGRect(x: 600, y: 450, width: 600, height: 450)),
+            CooperativeCornerResize.Candidate(id: 4, frame: CGRect(x: 0, y: 450, width: 600, height: 450))
+        ]
+        let plan = CooperativeCornerResize.plan(oldFocusedFrame: current,
+                                                newFocusedFrame: resolution.rect,
+                                                screenFrame: screenFrame,
+                                                candidates: candidates,
+                                                axis: intent.axis,
+                                                tolerance: 8,
+                                                minimumSize: CGSize(width: 100, height: 100),
+                                                gapSize: 0,
+                                                captureTolerance: 72,
+                                                movedEdgeOverride: intent.movedEdge,
+                                                candidateDiscoveryFrame: current,
+                                                actionDescription: "test cyclic row resize")
+
+        XCTAssertEqual(plan?.adjustments.map(\.id), [2])
+    }
+
+    func testFullSideSplitBoundaryMovementPreservesConfiguredGapsAcrossRows() {
+        let gap: Float = 20
+        func gapped(_ rawFrame: CGRect, action: WindowAction) -> CGRect {
+            GapCalculation.applyGaps(rawFrame,
+                                     dimension: .both,
+                                     sharedEdges: action.gapSharedEdge,
+                                     gapSize: gap)
+        }
+
+        let current = gapped(CGRect(x: 600, y: 0, width: 600, height: 450), action: .bottomRight)
+        let resolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeLeft,
+                                                                                        currentFrame: current,
+                                                                                        screenFrame: screenFrame,
+                                                                                        gapSize: CGFloat(gap))
+        let intent = resolution.intent!
+        let requestedFocused = gapped(resolution.rect, action: .bottomRight)
+        let candidates = [
+            CooperativeCornerResize.Candidate(id: 2,
+                                               frame: gapped(CGRect(x: 0, y: 0, width: 600, height: 450), action: .bottomLeft)),
+            CooperativeCornerResize.Candidate(id: 3,
+                                               frame: gapped(CGRect(x: 600, y: 450, width: 600, height: 450), action: .topRight)),
+            CooperativeCornerResize.Candidate(id: 4,
+                                               frame: gapped(CGRect(x: 0, y: 450, width: 600, height: 450), action: .topLeft))
+        ]
+        let discoveryFrame = WindowManager().fullSplitBoundaryDiscoveryFrame(current,
+                                                                              screenFrame: screenFrame,
+                                                                              axis: intent.axis,
+                                                                              gapSize: CGFloat(gap))
+        let plan = CooperativeCornerResize.plan(oldFocusedFrame: current,
+                                                newFocusedFrame: requestedFocused,
+                                                screenFrame: screenFrame,
+                                                candidates: candidates,
+                                                axis: intent.axis,
+                                                tolerance: 8,
+                                                minimumSize: CGSize(width: 100, height: 100),
+                                                gapSize: CGFloat(gap),
+                                                captureTolerance: 72,
+                                                movedEdgeOverride: intent.movedEdge,
+                                                candidateDiscoveryFrame: discoveryFrame,
+                                                actionDescription: "test gapped directional side split boundary resize")
+
+        XCTAssertNotNil(plan)
+        assertRect(plan!.focusedFrame, equals: requestedFocused)
+        let adjustments = Dictionary(uniqueKeysWithValues: plan!.adjustments.map { ($0.id, $0.newFrame) })
+        assertRect(adjustments[2]!, equals: gapped(CGRect(x: 0, y: 0, width: 400, height: 450), action: .bottomLeft))
+        assertRect(adjustments[3]!, equals: gapped(CGRect(x: 400, y: 450, width: 800, height: 450), action: .topRight))
+        assertRect(adjustments[4]!, equals: gapped(CGRect(x: 0, y: 450, width: 400, height: 450), action: .topLeft))
+    }
+
+    func testPlacementTransitionsPreserveConfiguredGaps() {
+        let gap: Float = 20
+        func gapped(_ rawFrame: CGRect, action: WindowAction) -> CGRect {
+            GapCalculation.applyGaps(rawFrame,
+                                     dimension: action.gapsApplicable,
+                                     sharedEdges: action.gapSharedEdge,
+                                     gapSize: gap)
+        }
+
+        let rightSide = gapped(CGRect(x: 600, y: 0, width: 600, height: 900), action: .rightHalf)
+        let cornerResolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeDown,
+                                                                                              currentFrame: rightSide,
+                                                                                              screenFrame: screenFrame,
+                                                                                              gapSize: CGFloat(gap))
+        let gappedCorner = gapped(cornerResolution.rect, action: .bottomRight)
+        XCTAssertEqual(DirectionalResizePlacementClassifier.classify(frame: gappedCorner,
+                                                                     screenFrame: screenFrame,
+                                                                     gapSize: CGFloat(gap)),
+                       .bottomRightCorner)
+
+        let maximumTopRight = gapped(CGRect(x: 600, y: 225, width: 600, height: 675), action: .topRight)
+        let sideResolution = WindowCalculationFactory.directionalResizeCalculation.resolve(action: .resizeDown,
+                                                                                            currentFrame: maximumTopRight,
+                                                                                            screenFrame: screenFrame,
+                                                                                            gapSize: CGFloat(gap))
+        let gappedSide = gapped(sideResolution.rect, action: .rightHalf)
+        XCTAssertEqual(DirectionalResizePlacementClassifier.classify(frame: gappedSide,
+                                                                     screenFrame: screenFrame,
+                                                                     gapSize: CGFloat(gap)),
+                       .rightSide)
+    }
+
+    private func assertRect(_ actual: CGRect,
+                            equals expected: CGRect,
+                            file: StaticString = #filePath,
+                            line: UInt = #line) {
+        XCTAssertEqual(actual.origin.x, expected.origin.x, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actual.origin.y, expected.origin.y, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actual.width, expected.width, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(actual.height, expected.height, accuracy: 0.001, file: file, line: line)
+    }
+}
+
 class ScreenFlippedTests: XCTestCase {
 
     func testScreenFlippedIsOwnInverse() {
@@ -1115,17 +1856,20 @@ class CooperativeCornerResizeTests: XCTestCase {
         let savedAxis = Defaults.cornerCycleExpansionAxis.value
         let savedHorizontalSplitRatio = Defaults.horizontalSplitRatio.value
         let savedVerticalSplitRatio = Defaults.verticalSplitRatio.value
+        let savedSubsequentExecutionMode = Defaults.subsequentExecutionMode.value
         defer {
             Defaults.cooperativeCornerResize.enabled = savedValue
             Defaults.cornerCycleExpansionAxis.value = savedAxis
             Defaults.horizontalSplitRatio.value = savedHorizontalSplitRatio
             Defaults.verticalSplitRatio.value = savedVerticalSplitRatio
+            Defaults.subsequentExecutionMode.value = savedSubsequentExecutionMode
         }
 
         Defaults.cooperativeCornerResize.enabled = false
         Defaults.cornerCycleExpansionAxis.value = .vertical
         Defaults.horizontalSplitRatio.value = 50
         Defaults.verticalSplitRatio.value = 50
+        Defaults.subsequentExecutionMode.value = .resize
 
         let visibleFrame = CGRect(x: 10, y: 20, width: 1200, height: 900)
         let firstRect = WindowCalculationFactory.lowerLeftCalculation.calculateRect(RectCalculationParameters(window: Window(id: 1, rect: visibleFrame),

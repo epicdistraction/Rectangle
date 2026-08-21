@@ -116,6 +116,66 @@ final class ActiveSideSplitRatios {
         }
     }
 
+    func recordAchievedDirectionalResize(_ intent: DirectionalResizeIntent,
+                                         previousFrame: CGRect,
+                                         achievedFrame: CGRect,
+                                         screenFrame: CGRect,
+                                         gapSize: CGFloat) {
+        resetChangedConfiguredDefaults()
+
+        guard !previousFrame.isNull,
+              !achievedFrame.isNull,
+              !screenFrame.isNull,
+              screenFrame.width > 0,
+              screenFrame.height > 0
+        else {
+            return
+        }
+
+        if intent.endpointAction == .promoteCornerToSide
+            || intent.endpointAction == .placeSideIntoCorner {
+            recordAchievedCooperativeAction(intent.placementAction,
+                                            achievedFrame: achievedFrame,
+                                            screenFrame: screenFrame,
+                                            gapSize: gapSize)
+            return
+        }
+
+        let oldSize = intent.axis == .horizontal ? previousFrame.width : previousFrame.height
+        let achievedSize = intent.axis == .horizontal ? achievedFrame.width : achievedFrame.height
+        let movement = achievedSize - oldSize
+        let movedInIntendedDirection: Bool
+        switch intent.operation {
+        case .expand:
+            movedInIntendedDirection = movement > 0.5
+        case .contract:
+            movedInIntendedDirection = movement < -0.5
+        }
+        guard movedInIntendedDirection else { return }
+
+        let halfGap = max(0, gapSize) / 2.0
+        switch intent.axis {
+        case .horizontal:
+            switch intent.placement {
+            case .topLeftCorner, .bottomLeftCorner, .leftSide:
+                recordLeadingHorizontalBoundary(achievedFrame.maxX + halfGap, screenFrame: screenFrame)
+            case .topRightCorner, .bottomRightCorner, .rightSide:
+                recordLeadingHorizontalBoundary(achievedFrame.minX - halfGap, screenFrame: screenFrame)
+            default:
+                return
+            }
+        case .vertical:
+            switch intent.placement {
+            case .topLeftCorner, .topRightCorner, .topSide:
+                recordLeadingVerticalBoundary(achievedFrame.minY - halfGap, screenFrame: screenFrame)
+            case .bottomLeftCorner, .bottomRightCorner, .bottomSide:
+                recordLeadingVerticalBoundary(achievedFrame.maxY + halfGap, screenFrame: screenFrame)
+            default:
+                return
+            }
+        }
+    }
+
     func resetAll() {
         ratiosByScreen.removeAll()
         configuredHorizontalPercent = Defaults.horizontalSplitRatio.value

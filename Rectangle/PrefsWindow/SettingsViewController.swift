@@ -446,6 +446,22 @@ class SettingsViewController: NSViewController {
                 vSplitPopUpButton?.selectCurrentValue()
             }
 
+            let directionalResizeActions: [WindowAction] = [
+                .resizeUp, .resizeDown, .resizeLeft, .resizeRight,
+                .maxResizeUp, .maxResizeDown, .maxResizeLeft, .maxResizeRight
+            ]
+            let directionalResizeLabels = directionalResizeActions.map { action -> NSTextField in
+                let label = NSTextField(labelWithString: action.displayName ?? action.name)
+                label.alignment = .right
+                label.translatesAutoresizingMaskIntoConstraints = false
+                return label
+            }
+            let directionalResizeShortcutViews = directionalResizeActions.map { action -> MASShortcutView in
+                let shortcutView = MASShortcutView(frame: NSRect(x: 0, y: 0, width: 160, height: 19))
+                shortcutView.setAssociatedUserDefaultsKey(action.name, withTransformerName: MASDictionaryTransformerName)
+                return shortcutView
+            }
+
             largerWidthShortcutView.setAssociatedUserDefaultsKey(WindowAction.largerWidth.name, withTransformerName: MASDictionaryTransformerName)
             smallerWidthShortcutView.setAssociatedUserDefaultsKey(WindowAction.smallerWidth.name, withTransformerName: MASDictionaryTransformerName)
             
@@ -481,6 +497,7 @@ class SettingsViewController: NSViewController {
                 bottomCenterLeftEighthShortcutView.shortcutValidator = passThroughValidator
                 bottomCenterRightEighthShortcutView.shortcutValidator = passThroughValidator
                 bottomRightEighthShortcutView.shortcutValidator = passThroughValidator
+                directionalResizeShortcutViews.forEach { $0.shortcutValidator = passThroughValidator }
             }
 
             let largerWidthIcon = NSImageView(frame: NSRect(x: 0, y: 0, width: 21, height: 14))
@@ -694,6 +711,16 @@ class SettingsViewController: NSViewController {
             vSplitControlsStack.addArrangedSubview(vSplitPopUpButton)
             vSplitControlsStack.addArrangedSubview(vSplitField)
             vSplitRow.addArrangedSubview(vSplitControlsStack)
+
+            let directionalResizeRows = zip(directionalResizeLabels, directionalResizeShortcutViews).map { label, shortcutView -> NSStackView in
+                let row = NSStackView()
+                row.orientation = .horizontal
+                row.alignment = .centerY
+                row.spacing = 18
+                row.addArrangedSubview(label)
+                row.addArrangedSubview(shortcutView)
+                return row
+            }
             
             let topVerticalThirdRow = NSStackView()
             topVerticalThirdRow.orientation = .horizontal
@@ -894,7 +921,7 @@ class SettingsViewController: NSViewController {
                 ninthsCyclingShortcutView,
                 twelfthsCyclingShortcutView,
                 sixteenthsCyclingShortcutView
-            ])
+            ] + directionalResizeShortcutViews)
 
             let overlapOffsetCheckbox = NSButton(checkboxWithTitle: NSLocalizedString("Offset cycling position on overlap", tableName: "Main", value: "", comment: ""), target: self, action: #selector(toggleCyclingOverlapOffset(_:)))
             overlapOffsetCheckbox.state = Defaults.cyclingOverlapOffset.userEnabled ? .on : .off
@@ -921,6 +948,8 @@ class SettingsViewController: NSViewController {
             mainStackView.addArrangedSubview(sixteenthsCyclingRow)
 
 
+            directionalResizeRows.forEach { mainStackView.addArrangedSubview($0) }
+            mainStackView.setCustomSpacing(10, after: directionalResizeRows.last!)
             mainStackView.addArrangedSubview(splitRatioHeaderLabel)
             mainStackView.setCustomSpacing(10, after: splitRatioHeaderLabel)
             mainStackView.addArrangedSubview(hSplitRow)
@@ -948,6 +977,14 @@ class SettingsViewController: NSViewController {
                 ninthsCyclingLabel.widthAnchor.constraint(equalTo: twelfthsCyclingLabel.widthAnchor),
                 twelfthsCyclingLabel.widthAnchor.constraint(equalTo: sixteenthsCyclingLabel.widthAnchor),
                 sixteenthsCyclingLabel.widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[0].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[1].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[2].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[3].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[4].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[5].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[6].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
+                directionalResizeLabels[7].widthAnchor.constraint(equalTo: hSplitLabel.widthAnchor),
                 hSplitLabel.widthAnchor.constraint(equalTo: vSplitLabel.widthAnchor),
                 largerWidthLabelStack.widthAnchor.constraint(equalTo: smallerWidthLabelStack.widthAnchor),
                 largerWidthShortcutView.widthAnchor.constraint(equalToConstant: 160),
@@ -975,6 +1012,14 @@ class SettingsViewController: NSViewController {
                 ninthsCyclingShortcutView.widthAnchor.constraint(equalToConstant: 160),
                 twelfthsCyclingShortcutView.widthAnchor.constraint(equalToConstant: 160),
                 sixteenthsCyclingShortcutView.widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[0].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[1].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[2].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[3].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[4].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[5].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[6].widthAnchor.constraint(equalToConstant: 160),
+                directionalResizeShortcutViews[7].widthAnchor.constraint(equalToConstant: 160),
                 widthStepField.trailingAnchor.constraint(equalTo: largerWidthShortcutView.trailingAnchor),
                 showAdditionalSizesCheckbox.leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
                 overlapOffsetCheckbox.leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
@@ -995,6 +1040,14 @@ class SettingsViewController: NSViewController {
                 ninthsCyclingShortcutView.leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
                 twelfthsCyclingShortcutView.leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
                 sixteenthsCyclingShortcutView.leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[0].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[1].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[2].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[3].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[4].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[5].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[6].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
+                directionalResizeShortcutViews[7].leadingAnchor.constraint(equalTo: largerWidthShortcutView.leadingAnchor),
                 gridHeaderLabel.widthAnchor.constraint(equalTo: mainStackView.widthAnchor),
                 cyclingHintLabel.widthAnchor.constraint(equalTo: mainStackView.widthAnchor, constant: -20),
                 hSplitControlsStack.trailingAnchor.constraint(equalTo: largerWidthShortcutView.trailingAnchor),

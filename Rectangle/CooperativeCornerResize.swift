@@ -33,7 +33,7 @@ struct CooperativeCornerResize {
         let debugLog: [String]
     }
 
-    enum MovedEdge {
+    enum MovedEdge: Equatable {
         case left, right, top, bottom
     }
 

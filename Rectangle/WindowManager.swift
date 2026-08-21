@@ -115,6 +115,11 @@ class WindowManager {
             Logger.log("Nil calculation result")
             return
         }
+
+        if calcResult.isNoOp {
+            Logger.log("Directional resize no-op")
+            return
+        }
         
         let gapsApplicable = calcResult.resultingAction.gapsApplicable
         
@@ -130,16 +135,50 @@ class WindowManager {
 
         let isFixedSize = (!frontmostWindowElement.isResizable() && action.resizes) || frontmostWindowElement.isSystemDialog == true
         let visibleFrameOfDestinationScreen = calcResult.resultingScreenFrame ?? calcResult.screen.adjustedVisibleFrame(ignoreTodo)
-        let cooperativeCornerPlan = cooperativeCornerResizePlan(focusedWindowId: windowId,
-                                                                focusedWindowIsFixedSize: isFixedSize,
-                                                                focusedWindowMinimumSize: frontmostWindowElement.minimumSize,
-                                                                action: action,
-                                                                source: parameters.source,
-                                                                oldFocusedFrame: currentNormalizedRect,
-                                                                newFocusedFrame: calcResult.rect,
-                                                                screenFrame: visibleFrameOfDestinationScreen,
-                                                                destinationScreenIsCurrentScreen: usableScreens.currentScreen == calcResult.screen,
-                                                                lastRectangleAction: lastRectangleAction)
+        let directionalRequestedFrame = calcResult.rect
+        let resolvedCooperativeAction = calcResult.directionalResizeIntent == nil ? action : calcResult.resultingAction
+        let usesFullSplitBoundary = calcResult.directionalResizeIntent?.usesFullSplitBoundary(
+            cyclicCornerAxis: Defaults.cornerCycleExpansionAxis.value
+        ) ?? false
+        let promotionDisplacement = DirectionalResizeDisplacementState.shared.consumeIfMatching(
+            windowId: windowId,
+            intent: calcResult.directionalResizeIntent,
+            currentFrame: currentNormalizedRect,
+            screenFrame: visibleFrameOfDestinationScreen
+        )
+        var cooperativeCornerPlan = promotionDisplacement == nil
+            ? cooperativeCornerResizePlan(focusedWindowId: windowId,
+                                          focusedWindowIsFixedSize: isFixedSize,
+                                          focusedWindowMinimumSize: frontmostWindowElement.minimumSize,
+                                          action: resolvedCooperativeAction,
+                                          source: parameters.source,
+                                          oldFocusedFrame: currentNormalizedRect,
+                                          newFocusedFrame: calcResult.rect,
+                                          screenFrame: visibleFrameOfDestinationScreen,
+                                          destinationScreenIsCurrentScreen: usableScreens.currentScreen == calcResult.screen,
+                                          lastRectangleAction: lastRectangleAction,
+                                          axisOverride: calcResult.directionalResizeIntent?.axis,
+                                          movedEdgeOverride: calcResult.directionalResizeIntent?.movedEdge,
+                                          forceRepeatedResize: calcResult.directionalResizeIntent != nil,
+                                          allowsCycleLookAhead: calcResult.directionalResizeIntent == nil,
+                                          usesFullSplitBoundary: usesFullSplitBoundary)
+            : nil
+        if let intent = calcResult.directionalResizeIntent,
+           let plan = cooperativeCornerPlan,
+           !intent.acceptsCooperativeFocusedFrame(plan.focusedFrame,
+                                                  requestedFrame: directionalRequestedFrame) {
+            Logger.log("Directional corner-to-side promotion cannot reach the requested side cooperatively; applying the side placement to the focused window only")
+            DirectionalResizeDisplacementState.shared.recordFallbackPromotion(
+                windowId: windowId,
+                intent: intent,
+                displacedWindowIds: plan.adjustments
+                    .filter { $0.kind == .adjacent }
+                    .map(\.id),
+                sideFrame: directionalRequestedFrame,
+                screenFrame: visibleFrameOfDestinationScreen
+            )
+            cooperativeCornerPlan = nil
+        }
         if let cooperativeCornerPlan {
             calcResult.rect = cooperativeCornerPlan.focusedFrame
             if let sideSplitRecordingFrame = cooperativeCornerPlan.sideSplitRecordingFrame {
@@ -147,7 +186,7 @@ class WindowManager {
             }
         }
 
-        if cooperativeCornerPlan == nil {
+        if cooperativeCornerPlan == nil, calcResult.directionalResizeIntent == nil {
             ActiveSideSplitRatios.shared.recordSideAction(calcResult.resultingAction,
                                                           targetFrame: calcResult.initialRect,
                                                           screenFrame: visibleFrameOfDestinationScreen)
@@ -155,10 +194,19 @@ class WindowManager {
 
         if let cooperativeCornerPlan {
             if !cooperativeCornerPlan.needsApplication(focusedCurrentFrame: currentNormalizedRect) {
-                ActiveSideSplitRatios.shared.recordAchievedCooperativeAction(cooperativeCornerPlan.action,
-                                                                            achievedFrame: currentNormalizedRect,
-                                                                            screenFrame: cooperativeCornerPlan.screenFrame,
-                                                                            gapSize: cooperativeCornerPlan.gapSize)
+                if let intent = calcResult.directionalResizeIntent {
+                    DirectionalResizeEndpointState.shared.recordAttempt(windowId: windowId,
+                                                                        intent: intent,
+                                                                        previousFrame: currentNormalizedRect,
+                                                                        requestedFrame: directionalRequestedFrame,
+                                                                        achievedFrame: currentNormalizedRect,
+                                                                        screenFrame: visibleFrameOfDestinationScreen)
+                } else {
+                    ActiveSideSplitRatios.shared.recordAchievedCooperativeAction(cooperativeCornerPlan.action,
+                                                                                achievedFrame: currentNormalizedRect,
+                                                                                screenFrame: cooperativeCornerPlan.screenFrame,
+                                                                                gapSize: cooperativeCornerPlan.gapSize)
+                }
                 Logger.log("Cooperative resize no-op: solved frames already match current frames")
                 recordAction(windowId: windowId, resultingRect: currentWindowRect, action: calcResult.resultingAction, subAction: calcResult.resultingSubAction)
                 return
@@ -188,12 +236,33 @@ class WindowManager {
             resultingRect = apply(result: resultParameters)
         }
 
+        if let promotionDisplacement {
+            resultingRect = applyDirectionalPromotionCornerFill(promotionDisplacement,
+                                                                 destinationCornerFrame: calcResult.initialRect,
+                                                                 screenFrame: visibleFrameOfDestinationScreen,
+                                                                 result: resultParameters)
+        }
+
         if let cooperativeCornerPlan {
             // AX can enforce a minimum size that was not reported before the settling pass.
-            ActiveSideSplitRatios.shared.recordAchievedCooperativeAction(cooperativeCornerPlan.action,
-                                                                        achievedFrame: resultingRect.screenFlipped,
-                                                                        screenFrame: cooperativeCornerPlan.screenFrame,
-                                                                        gapSize: cooperativeCornerPlan.gapSize)
+            if let intent = calcResult.directionalResizeIntent {
+                ActiveSideSplitRatios.shared.recordAchievedDirectionalResize(intent,
+                                                                              previousFrame: currentNormalizedRect,
+                                                                              achievedFrame: resultingRect.screenFlipped,
+                                                                              screenFrame: cooperativeCornerPlan.screenFrame,
+                                                                              gapSize: cooperativeCornerPlan.gapSize)
+            } else {
+                ActiveSideSplitRatios.shared.recordAchievedCooperativeAction(cooperativeCornerPlan.action,
+                                                                            achievedFrame: resultingRect.screenFlipped,
+                                                                            screenFrame: cooperativeCornerPlan.screenFrame,
+                                                                            gapSize: cooperativeCornerPlan.gapSize)
+            }
+        } else if let intent = calcResult.directionalResizeIntent {
+            ActiveSideSplitRatios.shared.recordAchievedDirectionalResize(intent,
+                                                                          previousFrame: currentNormalizedRect,
+                                                                          achievedFrame: resultingRect.screenFlipped,
+                                                                          screenFrame: visibleFrameOfDestinationScreen,
+                                                                          gapSize: CGFloat(Defaults.gapSize.value))
         }
         
         let isMovedAcrossDisplays = usableScreens.currentScreen != calcResult.screen
@@ -217,14 +286,26 @@ class WindowManager {
         }
 
         if !isMovedAcrossDisplays {
-            applyCooperativeCornerCleanupIfNeeded(focusedWindowId: windowId,
-                                                  source: parameters.source,
-                                                  oldFocusedFrame: currentNormalizedRect,
-                                                  newFocusedFrame: resultingRect.screenFlipped,
-                                                  screenFrame: usableScreens.currentScreen.adjustedVisibleFrame(ignoreTodo),
-                                                  currentAction: action,
-                                                  lastRectangleAction: lastRectangleAction)
+            if calcResult.directionalResizeIntent?.endpointAction != .promoteCornerToSide,
+               promotionDisplacement == nil {
+                applyCooperativeCornerCleanupIfNeeded(focusedWindowId: windowId,
+                                                      source: parameters.source,
+                                                      oldFocusedFrame: currentNormalizedRect,
+                                                      newFocusedFrame: resultingRect.screenFlipped,
+                                                      screenFrame: usableScreens.currentScreen.adjustedVisibleFrame(ignoreTodo),
+                                                      currentAction: calcResult.directionalResizeIntent == nil ? action : calcResult.resultingAction,
+                                                      lastRectangleAction: lastRectangleAction)
+            }
             resultingRect = frontmostWindowElement.frame
+        }
+
+        if let intent = calcResult.directionalResizeIntent {
+            DirectionalResizeEndpointState.shared.recordAttempt(windowId: windowId,
+                                                                intent: intent,
+                                                                previousFrame: currentNormalizedRect,
+                                                                requestedFrame: directionalRequestedFrame,
+                                                                achievedFrame: resultingRect.screenFlipped,
+                                                                screenFrame: visibleFrameOfDestinationScreen)
         }
         
         postProcess(result: resultParameters, resultingRect: resultingRect)

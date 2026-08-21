@@ -135,7 +135,15 @@ enum WindowAction: Int, Codable {
          displaySix = 125,
          displaySeven = 126,
          displayEight = 127,
-         displayNine = 128
+         displayNine = 128,
+         resizeUp = 129,
+         resizeDown = 130,
+         resizeLeft = 131,
+         resizeRight = 132,
+         maxResizeUp = 133,
+         maxResizeDown = 134,
+         maxResizeLeft = 135,
+         maxResizeRight = 136
 
     // Order matters here - it's used in the menu
     static let active = [leftHalf, rightHalf, centerHalf, topHalf, bottomHalf,
@@ -168,7 +176,9 @@ enum WindowAction: Int, Codable {
                          leftTodo, rightTodo,
                          cascadeActiveApp, tileActiveApp,
                          displayOne, displayTwo, displayThree, displayFour, displayFive,
-                         displaySix, displaySeven, displayEight, displayNine
+                         displaySix, displaySeven, displayEight, displayNine,
+                         resizeUp, resizeDown, resizeLeft, resizeRight,
+                         maxResizeUp, maxResizeDown, maxResizeLeft, maxResizeRight
     ]
 
     func post() {
@@ -328,6 +338,14 @@ enum WindowAction: Int, Codable {
         case .displaySeven: return "displaySeven"
         case .displayEight: return "displayEight"
         case .displayNine: return "displayNine"
+        case .resizeUp: return "resizeUp"
+        case .resizeDown: return "resizeDown"
+        case .resizeLeft: return "resizeLeft"
+        case .resizeRight: return "resizeRight"
+        case .maxResizeUp: return "maxResizeUp"
+        case .maxResizeDown: return "maxResizeDown"
+        case .maxResizeLeft: return "maxResizeLeft"
+        case .maxResizeRight: return "maxResizeRight"
         }
     }
 
@@ -633,6 +651,30 @@ enum WindowAction: Int, Codable {
         case .displayOne, .displayTwo, .displayThree, .displayFour, .displayFive,
              .displaySix, .displaySeven, .displayEight, .displayNine:
             return nil
+        case .resizeUp:
+            key = "resizeUp.title"
+            value = "Resize Up"
+        case .resizeDown:
+            key = "resizeDown.title"
+            value = "Resize Down"
+        case .resizeLeft:
+            key = "resizeLeft.title"
+            value = "Resize Left"
+        case .resizeRight:
+            key = "resizeRight.title"
+            value = "Resize Right"
+        case .maxResizeUp:
+            key = "maxResizeUp.title"
+            value = "Max Resize Up"
+        case .maxResizeDown:
+            key = "maxResizeDown.title"
+            value = "Max Resize Down"
+        case .maxResizeLeft:
+            key = "maxResizeLeft.title"
+            value = "Max Resize Left"
+        case .maxResizeRight:
+            key = "maxResizeRight.title"
+            value = "Max Resize Right"
         }
 
         return NSLocalizedString(key, tableName: "Main", value: value, comment: "")
@@ -664,6 +706,8 @@ enum WindowAction: Int, Codable {
     var isDragSnappable: Bool {
         switch self {
         case .restore, .previousDisplay, .nextDisplay, .moveUp, .moveDown, .moveLeft, .moveRight, .specified, .reverseAll, .tileAll, .cascadeAll, .larger, .smaller, .largerWidth, .smallerWidth, .cascadeActiveApp, .tileActiveApp,
+            .resizeUp, .resizeDown, .resizeLeft, .resizeRight,
+            .maxResizeUp, .maxResizeDown, .maxResizeLeft, .maxResizeRight,
             // Ninths
             .topLeftNinth, .topCenterNinth, .topRightNinth, .middleLeftNinth, .middleCenterNinth, .middleRightNinth, .bottomLeftNinth, .bottomCenterNinth, .bottomRightNinth,
             // Corner thirds
@@ -853,6 +897,14 @@ enum WindowAction: Int, Codable {
         case .displayOne, .displayTwo, .displayThree, .displayFour, .displayFive,
              .displaySix, .displaySeven, .displayEight, .displayNine:
             return NSImage(imageLiteralResourceName: "nextDisplayTemplate")
+        case .resizeUp: return NSImage(imageLiteralResourceName: "moveUpTemplate")
+        case .resizeDown: return NSImage(imageLiteralResourceName: "moveDownTemplate")
+        case .resizeLeft: return NSImage(imageLiteralResourceName: "moveLeftTemplate")
+        case .resizeRight: return NSImage(imageLiteralResourceName: "moveRightTemplate")
+        case .maxResizeUp: return NSImage(imageLiteralResourceName: "moveUpTemplate")
+        case .maxResizeDown: return NSImage(imageLiteralResourceName: "moveDownTemplate")
+        case .maxResizeLeft: return NSImage(imageLiteralResourceName: "moveLeftTemplate")
+        case .maxResizeRight: return NSImage(imageLiteralResourceName: "moveRightTemplate")
         }
     }
 
@@ -905,7 +957,9 @@ enum WindowAction: Int, Codable {
             return Defaults.applyGapsToMaximizeHeight.userDisabled ? .none : .vertical;
         case .almostMaximize, .previousDisplay, .nextDisplay, .larger, .smaller, .largerWidth, .smallerWidth, .largerHeight, .smallerHeight, .center, .centerProminently, .restore, .specified, .reverseAll, .tileAll, .cascadeAll, .cascadeActiveApp, .tileActiveApp,
              .displayOne, .displayTwo, .displayThree, .displayFour, .displayFive,
-             .displaySix, .displaySeven, .displayEight, .displayNine:
+             .displaySix, .displaySeven, .displayEight, .displayNine,
+             .resizeUp, .resizeDown, .resizeLeft, .resizeRight,
+             .maxResizeUp, .maxResizeDown, .maxResizeLeft, .maxResizeRight:
             return .none
         }
     }
@@ -924,7 +978,9 @@ enum WindowAction: Int, Codable {
              .halveHeightUp, .halveHeightDown, .halveWidthLeft, .halveWidthRight,
              .reverseAll, .tileAll, .cascadeAll, .cascadeActiveApp, .tileActiveApp,
              .leftTodo, .rightTodo,
-             .specified:
+             .specified,
+             .resizeUp, .resizeDown, .resizeLeft, .resizeRight,
+             .maxResizeUp, .maxResizeDown, .maxResizeLeft, .maxResizeRight:
             return false
         default:
             return true
@@ -941,7 +997,9 @@ enum WindowAction: Int, Codable {
         case .topLeftTwelfth, .topCenterLeftTwelfth, .topCenterRightTwelfth, .topRightTwelfth, .middleLeftTwelfth, .middleCenterLeftTwelfth, .middleCenterRightTwelfth, .middleRightTwelfth, .bottomLeftTwelfth, .bottomCenterLeftTwelfth, .bottomCenterRightTwelfth, .bottomRightTwelfth: return .twelfths
         case .topLeftSixteenth, .topCenterLeftSixteenth, .topCenterRightSixteenth, .topRightSixteenth, .upperMiddleLeftSixteenth, .upperMiddleCenterLeftSixteenth, .upperMiddleCenterRightSixteenth, .upperMiddleRightSixteenth, .lowerMiddleLeftSixteenth, .lowerMiddleCenterLeftSixteenth, .lowerMiddleCenterRightSixteenth, .lowerMiddleRightSixteenth, .bottomLeftSixteenth, .bottomCenterLeftSixteenth, .bottomCenterRightSixteenth, .bottomRightSixteenth: return .sixteenths
         case .moveUp, .moveDown, .moveLeft, .moveRight: return .move
-        case .almostMaximize, .maximizeHeight, .larger, .smaller, .largerWidth, .smallerWidth, .largerHeight, .smallerHeight: return .size
+        case .almostMaximize, .maximizeHeight, .larger, .smaller, .largerWidth, .smallerWidth, .largerHeight, .smallerHeight,
+             .resizeUp, .resizeDown, .resizeLeft, .resizeRight,
+             .maxResizeUp, .maxResizeDown, .maxResizeLeft, .maxResizeRight: return .size
         default: return nil
         }
     }
@@ -950,7 +1008,9 @@ enum WindowAction: Int, Codable {
         switch self {
         case .firstThird, .firstTwoThirds, .centerThird, .centerTwoThirds, .lastTwoThirds, .lastThird:
             return .thirds
-        case .smaller, .larger, .smallerWidth, .largerWidth, .smallerHeight, .largerHeight:
+        case .smaller, .larger, .smallerWidth, .largerWidth, .smallerHeight, .largerHeight,
+             .resizeUp, .resizeDown, .resizeLeft, .resizeRight,
+             .maxResizeUp, .maxResizeDown, .maxResizeLeft, .maxResizeRight:
             return .size
         case .previousDisplay, .nextDisplay,
              .displayOne, .displayTwo, .displayThree, .displayFour, .displayFive,

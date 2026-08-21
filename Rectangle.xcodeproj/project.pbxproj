@@ -35,6 +35,7 @@
 		7BE578EF2C5BF4EE0083DAE3 /* CycleSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE578EE2C5BF4ED0083DAE3 /* CycleSize.swift */; };
 		7BE578F12EFA00010083DAE3 /* CooperativeCornerResize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE578F02EFA00010083DAE3 /* CooperativeCornerResize.swift */; };
 		7BE578F32EFE11010083DAE3 /* ActiveSideSplitRatios.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE578F22EFE11010083DAE3 /* ActiveSideSplitRatios.swift */; };
+		D1A000012F10000100D1A001 /* DirectionalResizeCalculation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A000002F10000100D1A001 /* DirectionalResizeCalculation.swift */; };
 		7EC9E3BAD5BC57E49A7BCEE5 /* TwelfthsRepeated.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3592F8E85CE82B8FA662A31 /* TwelfthsRepeated.swift */; };
 		866661F2257D248A00A9CD2D /* RepeatedExecutionsInThirdsCalculation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 866661F1257D248A00A9CD2D /* RepeatedExecutionsInThirdsCalculation.swift */; };
 		88763FEFFA3AECF8502604D6 /* LowerMiddleCenterLeftSixteenthCalculation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378C96D832D4CC6BCCF9D604 /* LowerMiddleCenterLeftSixteenthCalculation.swift */; };
@@ -247,6 +248,7 @@
 		7BE578EE2C5BF4ED0083DAE3 /* CycleSize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CycleSize.swift; sourceTree = "<group>"; };
 		7BE578F02EFA00010083DAE3 /* CooperativeCornerResize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CooperativeCornerResize.swift; sourceTree = "<group>"; };
 		7BE578F22EFE11010083DAE3 /* ActiveSideSplitRatios.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveSideSplitRatios.swift; sourceTree = "<group>"; };
+		D1A000002F10000100D1A001 /* DirectionalResizeCalculation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionalResizeCalculation.swift; sourceTree = "<group>"; };
 		7E8357E928530D10A806F3CD /* TopRightTwelfthCalculation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopRightTwelfthCalculation.swift; sourceTree = "<group>"; };
 		84E2DBE0733F31BC159BC99C /* UpperMiddleLeftSixteenthCalculation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpperMiddleLeftSixteenthCalculation.swift; sourceTree = "<group>"; };
 		866661F1257D248A00A9CD2D /* RepeatedExecutionsInThirdsCalculation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatedExecutionsInThirdsCalculation.swift; sourceTree = "<group>"; };
@@ -517,6 +519,7 @@
 				98A009BC251253A000CFBF0C /* BottomCenterSixthCalculation.swift */,
 				98A009BE251253AB00CFBF0C /* BottomRightSixthCalculation.swift */,
 				9824704822B189250037B409 /* WindowCalculation.swift */,
+				D1A000002F10000100D1A001 /* DirectionalResizeCalculation.swift */,
 				9824705022B28D7A0037B409 /* LeftRightHalfCalculation.swift */,
 				9821402022B3884600ABFB3F /* BottomHalfCalculation.swift */,
 				9821403022B38A0500ABFB3F /* TopHalfCalculation.swift */,
@@ -1054,6 +1057,7 @@
 				9821402522B3887200ABFB3F /* MaximizeCalculation.swift in Sources */,
 				866661F2257D248A00A9CD2D /* RepeatedExecutionsInThirdsCalculation.swift in Sources */,
 				9824704D22B189250037B409 /* WindowCalculation.swift in Sources */,
+				D1A000012F10000100D1A001 /* DirectionalResizeCalculation.swift in Sources */,
 				98C1008E230B9EF6006E5344 /* NextPrevDisplayCalculation.swift in Sources */,
 				9824703122AFA8470037B409 /* RectangleStatusItem.swift in Sources */,
 				D04CE31027817ABE00BD47B3 /* BottomRightNinthCalculation.swift in Sources */,

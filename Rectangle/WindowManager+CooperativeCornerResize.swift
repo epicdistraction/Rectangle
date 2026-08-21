@@ -4,6 +4,59 @@ import Cocoa
 
 extension WindowManager {
 
+    func applyDirectionalPromotionCornerFill(_ displacement: DirectionalResizeDisplacementState.Entry,
+                                             destinationCornerFrame: CGRect,
+                                             screenFrame: CGRect,
+                                             result: ResultParameters) -> CGRect {
+        guard let originAction = displacement.originPlacement.windowAction,
+              let rawTargetFrame = displacement.complementaryRawFrame(destinationCornerFrame: destinationCornerFrame)
+        else {
+            return result.windowElement.frame
+        }
+
+        let gapSize = max(0, Defaults.gapSize.value)
+        let targetFrame = gapSize > 0 && originAction.gapsApplicable != .none
+            ? GapCalculation.applyGaps(rawTargetFrame,
+                                       dimension: originAction.gapsApplicable,
+                                       sharedEdges: originAction.gapSharedEdge,
+                                       gapSize: gapSize,
+                                       skipTopGap: Defaults.skipGapTopEdge.enabled)
+            : rawTargetFrame
+        let displacedIds = Set(displacement.displacedWindowIds)
+        let displacedElements = AccessibilityElement.getAllWindowElements().compactMap { element -> (CGWindowID, AccessibilityElement)? in
+            guard let id = element.getWindowId(), displacedIds.contains(id) else { return nil }
+            return (id, element)
+        }
+
+        guard !displacedElements.isEmpty else { return result.windowElement.frame }
+
+        displacedElements.forEach { _, element in
+            element.setFrame(targetFrame.screenFlipped)
+        }
+        let realizedFillFrames = displacedElements.map { $0.1.frame.screenFlipped }
+        let reconciledFrames = displacement.reconciledFrames(requestedFocusedFrame: result.calcResult.rect,
+                                                             requestedFillFrame: targetFrame,
+                                                             realizedFillFrames: realizedFillFrames)
+        let resultingFocusedRect = applyFocusedCooperativeFrameIfNeeded(reconciledFrames.focusedFrame,
+                                                                        result: result,
+                                                                        layoutTolerance: 4)
+
+        displacedElements.forEach { id, element in
+            if CooperativeCornerResize.frameNeedsApplication(currentFrame: element.frame.screenFlipped,
+                                                             solvedFrame: reconciledFrames.fillFrame,
+                                                             screenFrame: screenFrame,
+                                                             layoutTolerance: 4) {
+                element.setFrame(reconciledFrames.fillFrame.screenFlipped)
+            }
+            Logger.log("Directional side-to-corner placement moved displaced window \(id) into \(originAction.name) with its realized minimum size and preserved gaps")
+            recordAction(windowId: id,
+                         resultingRect: element.frame,
+                         action: originAction,
+                         subAction: nil)
+        }
+        return resultingFocusedRect
+    }
+
     func applyCooperativeCornerResize(result: ResultParameters,
                                       plan: CooperativeCornerApplicationPlan) -> CGRect {
         var activePlan = plan
@@ -91,13 +144,18 @@ extension WindowManager {
                                      newFocusedFrame: CGRect,
                                      screenFrame: CGRect,
                                      destinationScreenIsCurrentScreen: Bool,
-                                     lastRectangleAction: RectangleAction?) -> CooperativeCornerApplicationPlan? {
+                                     lastRectangleAction: RectangleAction?,
+                                     axisOverride: CornerCycleExpansionAxis? = nil,
+                                     movedEdgeOverride: CooperativeCornerResize.MovedEdge? = nil,
+                                     forceRepeatedResize: Bool = false,
+                                     allowsCycleLookAhead: Bool = true,
+                                     usesFullSplitBoundary: Bool = false) -> CooperativeCornerApplicationPlan? {
         guard Defaults.cooperativeCornerResize.enabled,
               source.allowsCooperativeResize,
               !focusedWindowIsFixedSize,
               destinationScreenIsCurrentScreen,
-              let cooperativeAxis = action.cooperativeResizeAxis,
-              let movedEdge = action.cooperativeResizeMovedEdge
+              let cooperativeAxis = axisOverride ?? action.cooperativeResizeAxis,
+              let movedEdge = movedEdgeOverride ?? action.cooperativeResizeMovedEdge
         else {
             return nil
         }
@@ -105,8 +163,11 @@ extension WindowManager {
         let gapSize = max(0, CGFloat(Defaults.gapSize.value))
         let tolerance = CooperativeCornerResize.detectionTolerance(screenFrame: screenFrame, configuredGap: gapSize)
         let captureTolerance = CooperativeCornerResize.captureTolerance(screenFrame: screenFrame, axis: cooperativeAxis)
-        let isRepeatedCooperativeAction = action.isCompatibleRepeatedResizeAction(with: lastRectangleAction?.action)
-        let actionDescription = isRepeatedCooperativeAction ? "repeated cooperative resize" : "initial corner/side cooperative placement"
+        let isRepeatedCooperativeAction = forceRepeatedResize
+            || action.isCompatibleRepeatedResizeAction(with: lastRectangleAction?.action)
+        let actionDescription = usesFullSplitBoundary
+            ? "directional side split boundary resize"
+            : (isRepeatedCooperativeAction ? "repeated cooperative resize" : "initial corner/side cooperative placement")
         let screenFrameAX = screenFrame.screenFlipped
         let elementsById = AccessibilityElement.getAllWindowElements().reduce(into: [CGWindowID: AccessibilityElement]()) { elements, element in
             guard let candidateId = element.getWindowId(),
@@ -147,6 +208,7 @@ extension WindowManager {
                                                                                   gapSize: gapSize)
             : newFocusedFrame
         if isRepeatedCooperativeAction,
+           allowsCycleLookAhead,
            let lookAheadTarget = cycleLookAheadTargetForMinimumRestrictedAdjacent(action: action,
                                                                                   oldFocusedFrame: oldFocusedFrame,
                                                                                   requestedFocusedFrame: requestedFocusedFrame,
@@ -160,7 +222,13 @@ extension WindowManager {
             requestedFocusedFrame = lookAheadTarget.gappedFrame
             sideSplitRecordingFrame = lookAheadTarget.rawFrame
         }
-        let candidateDiscoveryFrame = isRepeatedCooperativeAction ? oldFocusedFrame : requestedFocusedFrame
+        let baseCandidateDiscoveryFrame = isRepeatedCooperativeAction ? oldFocusedFrame : requestedFocusedFrame
+        let candidateDiscoveryFrame = usesFullSplitBoundary
+            ? fullSplitBoundaryDiscoveryFrame(baseCandidateDiscoveryFrame,
+                                              screenFrame: screenFrame,
+                                              axis: cooperativeAxis,
+                                              gapSize: gapSize)
+            : baseCandidateDiscoveryFrame
         guard let plan = CooperativeCornerResize.plan(oldFocusedFrame: oldFocusedFrame,
                                                       newFocusedFrame: requestedFocusedFrame,
                                                       screenFrame: screenFrame,
@@ -208,6 +276,27 @@ extension WindowManager {
                                                 adjustments: adjustments,
                                                 sideSplitRecordingFrame: sideSplitRecordingFrame,
                                                 debugLog: plan.debugLog)
+    }
+
+    func fullSplitBoundaryDiscoveryFrame(_ frame: CGRect,
+                                         screenFrame: CGRect,
+                                         axis: CornerCycleExpansionAxis,
+                                         gapSize: CGFloat) -> CGRect {
+        var discoveryFrame = frame
+        let gap = max(0, gapSize)
+        switch axis {
+        case .horizontal:
+            let minY = screenFrame.minY + gap
+            let maxY = screenFrame.maxY - (Defaults.skipGapTopEdge.enabled ? 0 : gap)
+            discoveryFrame.origin.y = minY
+            discoveryFrame.size.height = max(0, maxY - minY)
+        case .vertical:
+            let minX = screenFrame.minX + gap
+            let maxX = screenFrame.maxX - gap
+            discoveryFrame.origin.x = minX
+            discoveryFrame.size.width = max(0, maxX - minX)
+        }
+        return discoveryFrame
     }
 
     func applyCooperativeCornerCleanupIfNeeded(focusedWindowId: CGWindowID,
